@@ -1,0 +1,93 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: ${POSTGRES_CONTAINER_NAME:-recipe-postgres}
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" -h localhost -p 5432',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - appnet
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: recipe-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # Build the DB URL from env variables so credentials are not hardcoded in compose.
+      DATABASE_URL: "postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}"
+      SQLALCHEMY_ECHO: "0"
+    ports:
+      - "8000:8000"
+    networks:
+      - appnet
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8000/ || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      
+      # Select build target using env var FRONTEND_BUILD_TARGET; default is 'production' (SSR/server build).
+      # Set to `dev` to build the dev image (vite).
+      target: ${FRONTEND_BUILD_TARGET:-production}
+    # Allow overriding container name so dev/prod don't reuse identical names
+    container_name: ${FRONTEND_CONTAINER_NAME:-recipe-frontend}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    env_file:
+      - .env
+    environment:
+      # Frontend runtime envs
+      VITE_API_BASE_URL: "http://backend:8000"
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+    # Make host and container ports configurable to avoid collisions between dev and prod images.
+    # - FRONTEND_HOST_PORT is the host-side port you map to.
+    # - FRONTEND_CONTAINER_PORT is the port the container exposes (production/SSR: 3000, dev/vite: 5173).
+    ports:
+      - "${FRONTEND_HOST_PORT:-3000}:${FRONTEND_CONTAINER_PORT:-3000}"
+    networks:
+      - appnet
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  db_data:
+
+networks:
+  appnet:
+    driver: bridge

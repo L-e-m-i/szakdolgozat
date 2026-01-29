@@ -1,0 +1,64 @@
+services:
+  frontend:
+    # Allow overriding container name so dev/prod don't conflict when running simultaneously
+    container_name: ${FRONTEND_CONTAINER_NAME:-recipe-frontend-dev}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      # Default to `dev` target for the development compose; can be overridden via env var.
+      target: ${FRONTEND_BUILD_TARGET:-dev}
+    restart: unless-stopped
+    # Mount the frontend source so you can edit files on the host and get HMR in the container.
+    volumes:
+      - ./frontend:/app:delegated
+      # Keep node_modules inside the container to avoid host/OS conflicts
+      - /app/node_modules
+    ports:
+      # Host and container ports are configurable to avoid collisions with production stack.
+      # Defaults map host 5173 -> container 5173 (Vite dev server).
+      - "${FRONTEND_HOST_PORT:-5173}:${FRONTEND_CONTAINER_PORT:-5173}"
+    env_file:
+      - .env
+    environment:
+      # Ensure frontend talks to backend service by its compose service name
+      VITE_API_BASE_URL: "http://backend:8000"
+      NODE_ENV: ${NODE_ENV:-development}
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_POLLING_INTERVAL: "1000"
+    depends_on:
+      - backend
+
+  backend:
+    # Allow overriding dev backend container name to avoid collisions
+    container_name: ${BACKEND_CONTAINER_NAME:-recipe-backend-dev}
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # Mount backend source for iterative development (hot reload)
+    volumes:
+      - ./backend:/app:delegated
+      # Keep installed packages inside the image/container to avoid host OS issues
+      - /app/.venv
+    ports:
+      # Allow overriding host port for backend if needed
+      - "${BACKEND_HOST_PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      # Use the DB service defined in the main compose file (kept as in original dev compose)
+      DATABASE_URL: "postgresql+psycopg2://recipe_user:recipe_pass@db:5432/recipe_db"
+      SQLALCHEMY_ECHO: "0"
+      HOST: "0.0.0.0"
+      PORT: "8000"
+    depends_on:
+      - db
+    # Start backend in reload/dev mode so code changes are picked up
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --reload

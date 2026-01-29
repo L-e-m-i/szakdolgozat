@@ -1,0 +1,19 @@
+{
+ // Use the Python interpreter inside the backend .venv (Windows path).
+ // If you're on macOS/Linux, change this to "${workspaceFolder}/.venv/bin/python".
+ "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+
+ // Help the language server resolve the backend package imports and tests
+ "python.analysis.extraPaths": [
+  "${workspaceFolder}",
+  "${workspaceFolder}/app",
+  "${workspaceFolder}/tests",
+ ],
+
+ // Analyze the whole workspace for diagnostics
+ "python.analysis.diagnosticMode": "workspace",
+
+ // Enable pytest integration and point it at the backend tests folder
+ "python.testing.pytestEnabled": true,
+ "python.testing.pytestArgs": ["tests"],
+}
