@@ -21,6 +21,8 @@ This repository contains a full-stack recipe application (React + Vite frontend,
   - [Useful commands](#useful-commands)
   - [Directory tree (visual)](#directory-tree-visual)
   - [Diagrams](#diagrams)
+    - [Entity-Relationship diagram](#entity-relationship-diagram)
+    - [Sequence diagram](#sequence-diagram)
 ---
 
 ## Quick Start
@@ -271,9 +273,13 @@ app/
 
 ## Diagrams
 
-Diagrams are stored in `docs/diagrams/`:
+### Entity-Relationship diagram
 
-- `docs/diagrams/er.png` — Entity-Relationship diagram (users, saved_recipes, refresh_tokens, etc.)
-- `docs/diagrams/sequence.png` — Example sequence for authentication + recipe save flow
+![Entity-Relationship diagram](docs/diagrams/er.png)
+
+
+### Sequence diagram
+
+![Sequence diagram](docs/diagrams/sequence.png)
 
 ---
