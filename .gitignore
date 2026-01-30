@@ -8,3 +8,4 @@ __pycache__/
 .venv/
 scripts/
 app/backend/.coverage
+beadando.txt
