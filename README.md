@@ -337,13 +337,13 @@ This project includes two diagrams stored in the `docs/` folder. The images are 
 
 ### Entity-Relationship diagram
 
-![Entity-Relationship diagram](docs/er.png)
+![Entity-Relationship diagram](docs/diagrams/er.png)
 
 Caption: ER diagram showing `users`, `saved_recipes`, `refresh_tokens`, and relationships.
 
 ### Sequence diagram
 
-![Sequence diagram](docs/sequence.png)
+![Sequence diagram](docs/diagrams/sequence.png)
 
 Caption: Example sequence diagram that demonstrates a typical authentication + recipe-save flow (login → issue refresh token → save recipe → token verification / cascade behaviors).
 
