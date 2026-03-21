@@ -47,7 +47,7 @@ services:
       - .env
     environment:
       # Use the DB service defined in the main compose file (kept as in original dev compose)
-      DATABASE_URL: "postgresql+psycopg2://recipe_user:recipe_pass@db:5432/recipe_db"
+      DATABASE_URL: "postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}"
       SQLALCHEMY_ECHO: "0"
       HOST: "0.0.0.0"
       PORT: "8000"

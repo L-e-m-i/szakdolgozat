@@ -9,3 +9,4 @@ __pycache__/
 scripts/
 app/backend/.coverage
 beadando.txt
+app/.env
