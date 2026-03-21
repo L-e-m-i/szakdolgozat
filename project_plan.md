@@ -10,19 +10,12 @@ Az alkalmazás a felhasználóktól kapott hozzávalók alapján automatikusan r
 
 
 | Képesség | Kategória | Komplexitás | Miért nem triviális? |
-
 |---|---|---|---|
-
 | Recept generálás (AI modellekből) | Érték | L | Duál modell ensemble (finomhangolt T5 + custom TransformerV3), fallback kezelés, timeout kezelés |
-
 | Felhasználó bejelentkezés (JWT + refresh token + HttpOnly cookie) | Produktivitás | L | Refresh token rotáció, hashelt DB-tárolás, HttpOnly/Secure cookie stratégia, jelszóhasítás (Argon2), CORS és dev/prod eltérések kezelése |
-
 | Receptek mentése/lekérése (felhasználói profil) | Érték | M | SQLAlchemy ORM relációk, kaszkádos törlés, tulajdonos-alapú hozzáférés-ellenőrzés (csak saját receptek) |
-
 | Hibakezelés, validáció & védelem | Produktivitás | M | Strukturált hibaválaszok, Pydantic validáció (mezőkorlátok), auth endpoint rate limiting, részletes naplózás |
-
 | ML modell betöltés & caching | Érték | M | Eszközdetektálás (CUDA/CPU), lusta betöltés singleton minta, modell verziózás |
-
 | Frontend hibavédelem & ismételt próbálkozás logika | Produktivitás | S | Kapcsolat ismételt próbálkozása, token frissítés kezelése, felhasználóbarát hibaüzenetek |
 
 
@@ -44,21 +37,13 @@ Ezzel párhuzamosan a publikus internetes üzemeltetéshez szükséges auth-bizt
 ## Tech stack – indoklással
 
 | Réteg | Technológia | Miért ezt és nem mást? |
-
 |---|---|---|
-
 | UI | React 18 + TypeScript + Vite | Modern, gyors HMR, erős típusozás, React Router v7 fájl-alapú útválasztás, Tailwind CSS hasznos-első stílusozáshoz |
-
 | Backend / logika | FastAPI + Python 3.13 | Aszinkron-első keretrendszer, automatikus OpenAPI séma generálás, Pydantic validáció, magas teljesítmény |
-
 | Adattárolás | PostgreSQL + SQLAlchemy ORM | Megbízható relációs adatbázis, erős funkciók (megkötések, indexelés, ACID), SQLAlchemy biztonságos lekérdezésekhez |
-
 | Auth | JWT + refresh token + Argon2 + HttpOnly cookie | Állapotmentes auth, hashelt refresh token tárolás, biztonságos rotáció, erős jelszóhasítás, dev/prod cookie stratégia |
-
 | ML / AI | PyTorch + Hugging Face Transformers (finomhangolt T5 + custom TransformerV3) | Ipari szabvány, előtanított súlyok, egyszerű integráció, eszközdetektálás (CUDA/CPU) |
-
 | Telepítés | Docker & Docker Compose | Konzisztens fejl./prod. környezet, könnyű helyi tesztelés, containerizált mikroszolgáltatások |
-
 | Tesztelés | PyTest (backend) + Vitest (frontend) | Átfogó tesztlefedettség, integrációs tesztek DB fixture-okkal, CI-kész |
 
 
@@ -82,3 +67,5 @@ Ezzel párhuzamosan a publikus internetes üzemeltetéshez szükséges auth-bizt
 - Naplózás és audit: auth események és érzékeny műveletek központosított, elemezhető naplózása.
 
 - Frontend auth állapotkezelés egyszerűsítése: a maradék, régi localStorage-alapú ellenőrzések teljes kivezetése.
+
+- ML modellek: benne maradjon mindkettő (finetuned T5 + custom TransformerV3) vagy csak a finomhangolt?
