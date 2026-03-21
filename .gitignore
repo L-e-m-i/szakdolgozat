@@ -10,3 +10,5 @@ scripts/
 app/backend/.coverage
 beadando.txt
 app/.env
+app/backend/.env
+
