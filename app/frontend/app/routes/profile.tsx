@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import type { Route } from "./+types/profile";
-import ProfileLayout from "../components/profileLayout";
+import ProfileLayout from "../components/ProfileLayout";
 
 import api from "../services/api";
 import type { components } from "../types";
