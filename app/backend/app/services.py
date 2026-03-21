@@ -30,25 +30,33 @@ def _normalize_ingredients(raw_ingredients: List[str]) -> List[str]:
     return unique
 
 
-def _ensure_steps_reference_ingredients(steps: List[str], ingredients: List[str]) -> List[str]:
-    """Ensure at least one step references provided ingredients for stable UX/tests."""
+def _normalize_steps(steps: List[str]) -> List[str]:
+    """Normalize steps to a non-empty list without injecting extra ingredients."""
     clean_steps = [s.strip() for s in steps if isinstance(s, str) and s.strip()]
     if not clean_steps:
         return [
-            "prepare all ingredients",
-            f"combine {', '.join(ingredients[:3])}",
+            "prepare ingredients",
             "cook until done",
         ]
 
-    merged = " ".join(clean_steps).lower()
-    if any(ingredient in merged for ingredient in ingredients):
-        return clean_steps
+    return clean_steps
 
-    return [
-        clean_steps[0],
-        f"add {', '.join(ingredients[:3])}",
-        *clean_steps[1:],
-    ]
+
+def _extract_ingredient_names(model_ingredients: object, fallback: List[str]) -> List[str]:
+    """Extract a flat list of ingredient names from model output."""
+    names: List[str] = []
+    if isinstance(model_ingredients, list):
+        for item in model_ingredients:
+            if isinstance(item, dict):
+                name = item.get("name")
+            else:
+                name = item
+            if name:
+                names.append(str(name).strip())
+    elif isinstance(model_ingredients, str):
+        names = [part.strip() for part in model_ingredients.split(",") if part.strip()]
+
+    return names if names else fallback
 
 
 def generate_recipe_from_ingredients(
@@ -74,10 +82,13 @@ def generate_recipe_from_ingredients(
             # Generate with both models
             try:
                 scratch_data = manager.generate_recipe_with_scratch(ingredients)
-                scratch_steps = _ensure_steps_reference_ingredients(
+                scratch_steps = _normalize_steps(
                     scratch_data.get("steps")
                     if isinstance(scratch_data.get("steps"), list)
                     else [str(scratch_data.get("steps", ""))],
+                )
+                scratch_ingredient_names = _extract_ingredient_names(
+                    scratch_data.get("ingredients"),
                     ingredients,
                 )
                 scratch_recipe = Recipe(
@@ -85,7 +96,7 @@ def generate_recipe_from_ingredients(
                     time=scratch_data.get("time"),
                     ingredients=[
                         RecipeIngredient(name=ing_name)
-                        for ing_name in ingredients
+                        for ing_name in scratch_ingredient_names
                     ],
                     steps=scratch_steps,
                     model="scratch",
@@ -96,10 +107,13 @@ def generate_recipe_from_ingredients(
 
             try:
                 finetuned_data = manager.generate_recipe_with_finetuned(ingredients)
-                finetuned_steps = _ensure_steps_reference_ingredients(
+                finetuned_steps = _normalize_steps(
                     finetuned_data.get("steps")
                     if isinstance(finetuned_data.get("steps"), list)
                     else [str(finetuned_data.get("steps", ""))],
+                )
+                finetuned_ingredient_names = _extract_ingredient_names(
+                    finetuned_data.get("ingredients"),
                     ingredients,
                 )
                 finetuned_recipe = Recipe(
@@ -107,7 +121,7 @@ def generate_recipe_from_ingredients(
                     time=finetuned_data.get("time"),
                     ingredients=[
                         RecipeIngredient(name=ing_name)
-                        for ing_name in ingredients
+                        for ing_name in finetuned_ingredient_names
                     ],
                     steps=finetuned_steps,
                     model="finetuned",
@@ -135,8 +149,11 @@ def generate_recipe_from_ingredients(
         else:
             raise ValueError(f"Unknown model choice: {model_choice}")
 
-        model_steps = _ensure_steps_reference_ingredients(
+        model_steps = _normalize_steps(
             data.get("steps") if isinstance(data.get("steps"), list) else [str(data.get("steps", ""))],
+        )
+        model_ingredient_names = _extract_ingredient_names(
+            data.get("ingredients"),
             ingredients,
         )
 
@@ -146,7 +163,7 @@ def generate_recipe_from_ingredients(
             time=data.get("time"),
             ingredients=[
                 RecipeIngredient(name=ing_name)
-                for ing_name in ingredients
+                for ing_name in model_ingredient_names
             ],
             steps=model_steps,
             model=data.get("model"),
