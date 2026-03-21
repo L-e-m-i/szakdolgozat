@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import type { Route } from "./+types/profile";
-import ProfileLayout from "../components/ProfileLayout";
+import ProfileLayout from "../components/profileLayout";
 
 import api from "../services/api";
 import type { components } from "../types";
@@ -10,8 +10,8 @@ type User = components["schemas"]["User"];
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Profil" },
-    { name: "description", content: "A profilod és a mentett recepteked." },
+    { title: "Profile" },
+    { name: "description", content: "Your profile and saved recipes." },
   ];
 }
 
@@ -119,7 +119,7 @@ export default function Profile() {
         // Ensure we provide `ingredients` and `steps` so the type `Recipe` is satisfied.
         const mapped: ApiRecipe[] = (res || []).map((r: ApiRecipe, idx) => {
           const id = r.id;
-          const title = r.title ?? r.title ?? `Recept`;
+          const title = r.title ?? r.title ?? `Recipe`;
           // const imageUrl = r.imageUrl ?? undefined;
           const steps = Array.isArray(r.steps) ? r.steps : [];
           const ingredients = Array.isArray(r.ingredients) ? r.ingredients : [];
@@ -151,7 +151,7 @@ export default function Profile() {
         // eslint-disable-next-line no-console
         console.error("Failed to fetch saved recipes", err);
         if (!mounted) return;
-        setError("Hiba a mentett receptek betöltése során.");
+        setError("Error loading saved recipes.");
         setSavedRecipes([]);
       })
       .finally(() => {

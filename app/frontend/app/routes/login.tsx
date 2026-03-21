@@ -5,8 +5,8 @@ import api, { ApiError, formatApiError } from "../services/api";
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Bejelentkezés" },
-    { name: "description", content: "Bejelentkezés a fiókjába." },
+    { title: "Log In" },
+    { name: "description", content: "Log in to your account." },
   ];
 }
 
@@ -70,11 +70,11 @@ export default function Login() {
 
     // Validate inputs client-side before making network requests.
     if (!email || !password) {
-      setError({ message: "Töltse ki az összes mezőt." });
+      setError({ message: "Please fill in all fields." });
       return;
     }
     if (!isEmailValid(email)) {
-      setError({ message: "Érvénytelen e-mail cím." });
+      setError({ message: "Invalid email address." });
       return;
     }
 
@@ -102,7 +102,7 @@ export default function Login() {
         console.warn("Failed to flush local saved recipes:", flushErr);
       }
 
-      setSuccess("Sikeres bejelentkezés. Átirányítás...");
+      setSuccess("Successfully logged in. Redirecting...");
       // Short delay so user sees the success message
       setTimeout(() => {
         navigate(fromPath, { replace: true });
@@ -127,7 +127,7 @@ export default function Login() {
     <div className="flex items-center justify-center min-h-screen bg-gray-50">
       <div className="w-full max-w-md p-8 space-y-8 bg-white rounded-lg shadow-md">
         <h1 className="text-3xl font-bold text-center text-gray-900">
-          Bejelentkezés
+          Log In
         </h1>
         <form onSubmit={handleLogin} className="space-y-6" noValidate>
           <div>
@@ -135,7 +135,7 @@ export default function Login() {
               htmlFor="email"
               className="text-sm font-medium text-gray-700"
             >
-              Email-cím
+              Email Address
             </label>
             <input
               type="email"
@@ -148,7 +148,7 @@ export default function Login() {
             />
             {!isEmailValid(email) && email.length > 0 && (
               <p className="text-xs text-red-600 mt-1">
-                Érvénytelen e-mail cím.
+                Invalid email address.
               </p>
             )}
           </div>
@@ -157,7 +157,7 @@ export default function Login() {
               htmlFor="password"
               className="text-sm font-medium text-gray-700"
             >
-              Jelszó
+              Password
             </label>
             <input
               type="password"
@@ -182,16 +182,16 @@ export default function Login() {
                 : "bg-blue-600 hover:bg-blue-700"
             } rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
           >
-            {loading ? "Bejelentkezés..." : "Bejelentkezés"}
+            {loading ? "Logging in..." : "Log In"}
           </button>
         </form>
         <p className="text-sm text-center text-gray-600">
-          Nincs fiókod?{" "}
+          Don't have an account?{" "}
           <Link
             to="/signup"
             className="font-medium text-blue-600 hover:underline cursor-pointer"
           >
-            Regisztrálj
+            Sign Up
           </Link>
         </p>
       </div>

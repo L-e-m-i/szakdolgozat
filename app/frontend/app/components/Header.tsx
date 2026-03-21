@@ -88,14 +88,14 @@ export default function Header() {
               to="/"
               className="text-gray-600 hover:text-blue-600 transition-colors"
             >
-              Recept Generálás
+              Generate Recipes
             </Link>
           </li>
           {user ? (
             <>
               <li className="flex items-center space-x-3">
                 <span className="text-gray-700">
-                  {user.username ? `Szia, ${user.username}` : "Bejelentkezve"}
+                  {user.username ? `Hi, ${user.username}` : "Logged In"}
                 </span>
               </li>
               <li>
@@ -103,7 +103,7 @@ export default function Header() {
                   to="/profile"
                   className="text-gray-600 hover:text-blue-600 transition-colors"
                 >
-                  Profil
+                  Profile
                 </Link>
               </li>
               <li>
@@ -111,7 +111,7 @@ export default function Header() {
                   onClick={handleLogout}
                   className="text-gray-600 hover:text-blue-600 transition-colors bg-transparent border-0 p-0"
                 >
-                  Kijelentkezés
+                  Log Out
                 </button>
               </li>
             </>
@@ -122,7 +122,7 @@ export default function Header() {
                   to="/login"
                   className="text-gray-600 hover:text-blue-600 transition-colors"
                 >
-                  Bejelentkezés
+                  Log In
                 </Link>
               </li>
               <li>
@@ -130,7 +130,7 @@ export default function Header() {
                   to="/signup"
                   className="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors cursor-pointer"
                 >
-                  Regisztráció
+                  Sign Up
                 </Link>
               </li>
             </>

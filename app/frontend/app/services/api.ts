@@ -10,9 +10,9 @@ export type User = components["schemas"]["User"];
 
 export class ApiError extends Error {
   status?: number;
-  detail?: any;
+  detail?: unknown;
 
-  constructor(message: string, status?: number, detail?: any) {
+  constructor(message: string, status?: number, detail?: unknown) {
     super(message);
     this.name = "ApiError";
     this.status = status;
@@ -24,34 +24,49 @@ const getBaseUrl = (): string => {
   try {
     // @ts-ignore
     const envBase = (import.meta as any)?.env?.VITE_API_BASE_URL;
-    if (envBase) return envBase;
+    if (envBase) {
+      // In browser context, normalize known local-dev mismatches that break cookies.
+      if (typeof window !== "undefined") {
+        try {
+          const parsed = new URL(envBase);
+          // Docker service hostnames are not reachable from the browser.
+          if (parsed.hostname === "backend") {
+            parsed.hostname = window.location.hostname || "localhost";
+          }
+          // Keep same-site host for cookie transport in localhost dev.
+          if (window.location.hostname === "localhost" && parsed.hostname === "127.0.0.1") {
+            parsed.hostname = "localhost";
+          }
+          return parsed.toString().replace(/\/+$/, "");
+        } catch {
+          // fall through to raw env value
+        }
+      }
+      return envBase;
+    }
   } catch {
-    /* ignore */
+    // ignore
   }
 
   const win = typeof window !== "undefined" ? (window as any) : undefined;
   if (win && win.__API_BASE__) return win.__API_BASE__;
-  return "http://127.0.0.1:8000";
+  return "http://localhost:8000";
 };
 
 const API_BASE = getBaseUrl().replace(/\/+$/, "");
+const PENDING_SAVES_KEY = "recipegen_pending_saves";
 
-/* ---------------------------
-   Low-level request helpers
-   --------------------------- */
+type AuthTokens = {
+  accessToken?: string;
+  expiresAt?: number;
+};
 
 async function handleResponse<T>(res: Response): Promise<T> {
-  // 1. SPECIFIKUS: Ha 204 No Content, azonnal térjünk vissza üres objektummal.
   if (res.status === 204) {
     return {} as T;
   }
 
-  // 2. BIZTONSÁGOS OLVASÁS: Először szövegként olvassuk ki a body-t.
-  // Ez a kulcs a hiba elkerüléséhez! Ha res.json()-t hívsz üres body-n, az dobja a hibát.
   const text = await res.text();
-
-  // 3. HA ÜRES A BODY (akár 200 OK, akár más):
-  // Ne próbáljuk meg parszolni, mert az okozza a SyntaxError-t.
   if (!text || text.trim() === "") {
     return {} as T;
   }
@@ -59,31 +74,32 @@ async function handleResponse<T>(res: Response): Promise<T> {
   const contentType = res.headers.get("content-type") || "";
   const isJson = contentType.includes("application/json");
 
-  // 4. SIKERES VÁLASZ (2xx)
   if (res.ok) {
     if (isJson) {
       try {
         return JSON.parse(text) as T;
-      } catch (e) {
-        console.warn("Server sent JSON header but invalid body:", text);
-        return {} as T; // Vagy visszaadhatod a text-et is
+      } catch {
+        return {} as T;
       }
     }
     return text as unknown as T;
   }
 
-  // 5. HIBA VÁLASZ (4xx, 5xx)
-  let detail: any = text;
+  let detail: unknown = text;
   if (isJson) {
     try {
       detail = JSON.parse(text);
     } catch {
-      // ignore JSON error on error response
+      // ignore parse error for error body
     }
   }
 
   const msg =
-    (detail && (detail.detail || detail.message || JSON.stringify(detail))) ||
+    (detail &&
+      typeof detail === "object" &&
+      (((detail as any).detail as string) ||
+        ((detail as any).message as string) ||
+        JSON.stringify(detail))) ||
     `HTTP ${res.status}`;
 
   throw new ApiError(String(msg), res.status, detail);
@@ -92,10 +108,10 @@ async function handleResponse<T>(res: Response): Promise<T> {
 async function request<T>(path: string, opts?: RequestInit): Promise<T> {
   const url = `${API_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
   const merged: RequestInit = {
-    credentials: "same-origin",
+    credentials: "include",
     headers: {
       Accept: "application/json",
-      ...(opts && (opts.headers as Record<string, string>)),
+      ...(opts?.headers as Record<string, string> | undefined),
     },
     ...opts,
   };
@@ -103,10 +119,6 @@ async function request<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(url, merged);
   return handleResponse<T>(res);
 }
-
-/* ---------------------------
-   Error normalizer
-   --------------------------- */
 
 export function formatApiError(err: any): {
   message: string;
@@ -152,113 +164,6 @@ export function formatApiError(err: any): {
   }
 }
 
-/* ---------------------------
-   Cookie helpers (tokens only)
-   --------------------------- */
-
-const COOKIE_ACCESS = "recipe_access_token";
-const COOKIE_REFRESH = "recipe_refresh_token";
-const COOKIE_EXPIRES_AT = "recipe_access_expires_at";
-const PENDING_SAVES_KEY = "recipegen_pending_saves";
-
-type AuthTokens = {
-  accessToken: string;
-  refreshToken?: string;
-  expiresAt?: number;
-};
-
-function setCookie(name: string, value: string, days?: number) {
-  try {
-    let cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; path=/`;
-    if (days) {
-      const date = new Date();
-      date.setTime(date.getTime() + days * 24 * 60 * 60 * 1000);
-      cookie += `; expires=${date.toUTCString()}`;
-    }
-    document.cookie = cookie;
-  } catch {
-    // ignore
-  }
-}
-
-function readCookie(name: string): string | null {
-  try {
-    if (!document || typeof document.cookie !== "string") return null;
-    const cookieString = document.cookie;
-    if (!cookieString) return null;
-
-    const parts = cookieString.split(";");
-    for (let part of parts) {
-      const idx = part.indexOf("=");
-      if (idx === -1) continue;
-      const rawName = part.slice(0, idx).trim();
-      const rawValue = part.slice(idx + 1).trim();
-      try {
-        if (decodeURIComponent(rawName) === name) {
-          return decodeURIComponent(rawValue);
-        }
-      } catch {
-        if (rawName === name) return rawValue;
-      }
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function deleteCookie(name: string) {
-  try {
-    document.cookie = `${encodeURIComponent(name)}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
-  } catch {
-    // ignore
-  }
-}
-
-function loadAuth(): AuthTokens | null {
-  try {
-    const access = readCookie(COOKIE_ACCESS);
-    if (!access) return null;
-    const refresh = readCookie(COOKIE_REFRESH) ?? undefined;
-    const expRaw = readCookie(COOKIE_EXPIRES_AT);
-    const expiresAt = expRaw ? Number(expRaw) : undefined;
-    return { accessToken: access, refreshToken: refresh, expiresAt };
-  } catch {
-    return null;
-  }
-}
-
-function saveAuth(tokens: AuthTokens | null) {
-  try {
-    if (!tokens) {
-      deleteCookie(COOKIE_ACCESS);
-      deleteCookie(COOKIE_REFRESH);
-      deleteCookie(COOKIE_EXPIRES_AT);
-      return;
-    }
-    setCookie(COOKIE_ACCESS, tokens.accessToken, 7);
-    if (tokens.refreshToken) setCookie(COOKIE_REFRESH, tokens.refreshToken, 30);
-    if (tokens.expiresAt)
-      setCookie(COOKIE_EXPIRES_AT, String(tokens.expiresAt), 7);
-  } catch {
-    // ignore
-  }
-}
-
-function clearAuth() {
-  try {
-    deleteCookie(COOKIE_ACCESS);
-    deleteCookie(COOKIE_REFRESH);
-    deleteCookie(COOKIE_EXPIRES_AT);
-  } catch {
-    // ignore
-  }
-}
-
-/* ---------------------------
-   Auth API
-   --------------------------- */
-
 export async function signup(
   username: string,
   email: string,
@@ -286,98 +191,70 @@ export async function login(
   form.set("username", username);
   form.set("password", password);
 
-  const res = await fetch(`${API_BASE}/auth/token`, {
+  const data = await request<{
+    access_token?: string;
+    expires_in?: number;
+  }>("/auth/token", {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
     },
     body: form.toString(),
-    credentials: "same-origin",
   });
-
-  const data = await handleResponse<{
-    access_token: string;
-    refresh_token?: string;
-    expires_in?: number;
-  }>(res);
-  const now = Date.now();
-  const expiresAt = data.expires_in ? now + data.expires_in * 1000 : undefined;
-  const tokens: AuthTokens = {
-    accessToken: data.access_token,
-    refreshToken: data.refresh_token,
-    expiresAt,
-  };
-  saveAuth(tokens);
 
   try {
     window.dispatchEvent(
       new CustomEvent("auth-changed", { detail: { loggedIn: true } }),
     );
   } catch {
-    /* ignore */
+    // ignore
   }
 
   flushLocalSavedRecipes().catch(() => {
-    /* ignore */
+    // ignore
   });
 
-  return tokens;
+  return {
+    accessToken: data.access_token,
+    expiresAt: data.expires_in ? Date.now() + data.expires_in * 1000 : undefined,
+  };
 }
 
 export async function logout(): Promise<void> {
-  const tokens = loadAuth();
-  if (tokens?.refreshToken) {
-    try {
-      await request("/auth/logout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: tokens.refreshToken }),
-      });
-    } catch {
-      // ignore server errors
-    }
+  try {
+    await request("/auth/logout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+  } catch {
+    // ignore server errors on logout
   }
-  clearAuth();
+
   try {
     window.dispatchEvent(
       new CustomEvent("auth-changed", { detail: { loggedIn: false } }),
     );
   } catch {
-    /* ignore */
+    // ignore
   }
 }
 
 export async function refreshAccessToken(): Promise<AuthTokens> {
-  const tokens = loadAuth();
-  if (!tokens?.refreshToken) {
-    throw new ApiError("No refresh token available", 401);
-  }
-
   const data = await request<{
-    access_token: string;
-    refresh_token?: string;
+    access_token?: string;
     expires_in?: number;
   }>("/auth/refresh", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh_token: tokens.refreshToken }),
+    body: JSON.stringify({}),
   });
 
-  const now = Date.now();
-  const expiresAt = data.expires_in ? now + data.expires_in * 1000 : undefined;
-  const newTokens: AuthTokens = {
+  return {
     accessToken: data.access_token,
-    refreshToken: data.refresh_token ?? tokens.refreshToken,
-    expiresAt,
+    expiresAt: data.expires_in ? Date.now() + data.expires_in * 1000 : undefined,
   };
-  saveAuth(newTokens);
-  return newTokens;
 }
-
-/* ---------------------------
-   Helpers for pending saves
-   --------------------------- */
 
 function savePendingRecipeLocally(recipe: Recipe) {
   try {
@@ -393,6 +270,7 @@ function savePendingRecipeLocally(recipe: Recipe) {
 export async function flushLocalSavedRecipes(): Promise<void> {
   const pendingRaw = localStorage.getItem(PENDING_SAVES_KEY);
   if (!pendingRaw) return;
+
   let pending: Recipe[] = [];
   try {
     pending = JSON.parse(pendingRaw);
@@ -406,48 +284,43 @@ export async function flushLocalSavedRecipes(): Promise<void> {
     return;
   }
 
-  let tokens = loadAuth();
-  if (!tokens?.accessToken && tokens?.refreshToken) {
-    try {
-      tokens = await refreshAccessToken();
-    } catch {
-      return;
-    }
-  }
-
-  if (!tokens?.accessToken) return;
-
-  for (const r of pending) {
+  for (const recipe of pending) {
     try {
       await request("/user/saved-recipes", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${tokens.accessToken}`,
-        },
-        body: JSON.stringify(r),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(recipe),
       });
-    } catch {
-      return;
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        try {
+          await refreshAccessToken();
+          await request("/user/saved-recipes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(recipe),
+          });
+        } catch {
+          return;
+        }
+      } else {
+        return;
+      }
     }
   }
 
   localStorage.removeItem(PENDING_SAVES_KEY);
 }
 
-/* ---------------------------
-   Recipe operations
-   --------------------------- */
-
 export async function generateRecipe(ingredients: string[]): Promise<Recipe> {
   if (!Array.isArray(ingredients) || ingredients.length === 0) {
     throw new ApiError("At least one ingredient is required");
   }
-  const body = JSON.stringify({ ingredients });
+
   return request<Recipe>("/recipes/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body,
+    body: JSON.stringify({ ingredients }),
   });
 }
 
@@ -460,92 +333,47 @@ export async function saveRecipe(
     steps: recipe.steps ?? [],
   };
 
-  const doAuthorizedSave = async (accessToken: string) => {
-    return request<{ id?: string; savedAt?: string }>("/user/saved-recipes", {
+  try {
+    return await request<{ id?: string; savedAt?: string }>("/user/saved-recipes", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(toSave),
     });
-  };
-
-  let tokens = loadAuth();
-
-  if (tokens?.accessToken) {
-    try {
-      return await doAuthorizedSave(tokens.accessToken);
-    } catch (err) {
-      if (
-        err instanceof ApiError &&
-        err.status === 401 &&
-        tokens?.refreshToken
-      ) {
-        try {
-          const newTokens = await refreshAccessToken();
-          return await doAuthorizedSave(newTokens.accessToken);
-        } catch {
-          // fallthrough to local save
-        }
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      try {
+        await refreshAccessToken();
+        return await request<{ id?: string; savedAt?: string }>("/user/saved-recipes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(toSave),
+        });
+      } catch {
+        savePendingRecipeLocally(toSave as Recipe);
+        return { savedLocally: true };
       }
     }
-  }
 
-  savePendingRecipeLocally(toSave as Recipe);
-  return { savedLocally: true };
+    savePendingRecipeLocally(toSave as Recipe);
+    return { savedLocally: true };
+  }
 }
 
 export async function getSavedRecipes(): Promise<Recipe[]> {
-  const tokens = loadAuth();
-  const headers: Record<string, string> = {};
-  if (tokens?.accessToken)
-    headers.Authorization = `Bearer ${tokens.accessToken}`;
-  return request<Recipe[]>("/user/saved-recipes", { method: "GET", headers });
+  return request<Recipe[]>("/user/saved-recipes", { method: "GET" });
 }
 
 export async function getSavedRecipe(id: string): Promise<Recipe> {
-  console.log("Fetching saved recipe:", id);
-  const tokens = loadAuth();
-  const headers: Record<string, string> = { Accept: "application/json" };
-  if (tokens?.accessToken)
-    headers.Authorization = `Bearer ${tokens.accessToken}`;
-
   return request<Recipe>(`/user/saved-recipes/${encodeURIComponent(id)}`, {
     method: "GET",
-    headers,
   });
 }
 
-// ITT VOLT A HIBA: Visszaállítva request használatára
 export async function deleteSavedRecipe(id: string): Promise<void> {
-  const tokens = loadAuth();
-  const headers: Record<string, string> = {};
-  if (tokens?.accessToken) {
-    headers.Authorization = `Bearer ${tokens.accessToken}`;
-  }
-
-  const res = await fetch(
-    `${API_BASE}/user/saved-recipes/${encodeURIComponent(id)}`,
-    {
-      method: "DELETE",
-      headers,
-    },
-  );
-
-  // 2. HA SIKERES (200, 201, 204)
-  // Itt a trükk: Nem hívunk se .json()-t, se .text()-et.
-  // Egyszerűen nem érdekel minket a válasz tartalma, ha a művelet sikeres volt.
-  if (res.ok) {
-    return;
-  }
-
-  await handleResponse(res);
+  await request(`/user/saved-recipes/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
 }
-
-/* ---------------------------
-   Misc helpers / user
-   --------------------------- */
 
 export default {
   generateRecipe,
@@ -576,57 +404,24 @@ export default {
     email?: string;
     full_name?: string;
   } | null> {
-    const tokens = loadAuth();
-
-    const callMe = async (accessToken?: string) => {
-      const headers: Record<string, string> = { Accept: "application/json" };
-      if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
-      // Közvetlen fetch, mert speciális auth fallback logikája van,
-      // de használjuk a biztonságos handleResponse-t
-      const res = await fetch(`${API_BASE}/auth/users/me/`, {
-        method: "GET",
-        headers,
-        credentials: "same-origin",
-      });
-      return handleResponse<{
+    const callMe = async () => {
+      return request<{
         username: string;
         email?: string;
         full_name?: string;
-      }>(res);
+      }>("/auth/users/me/", {
+        method: "GET",
+      });
     };
 
     try {
-      if (tokens?.accessToken) {
-        try {
-          return await callMe(tokens.accessToken);
-        } catch (err: any) {
-          if (
-            err instanceof ApiError &&
-            err.status === 401 &&
-            tokens?.refreshToken
-          ) {
-            try {
-              const newTokens = await refreshAccessToken();
-              return await callMe(newTokens.accessToken);
-            } catch {
-              // continue
-            }
-          }
-        }
-      }
-
       try {
-        const user = await callMe();
-        clearAuth();
-        try {
-          window.dispatchEvent(
-            new CustomEvent("auth-changed", { detail: { loggedIn: true } }),
-          );
-        } catch {
-          /* ignore */
+        return await callMe();
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) {
+          await refreshAccessToken();
+          return await callMe();
         }
-        return user;
-      } catch {
         return null;
       }
     } catch {

@@ -5,8 +5,8 @@ import api, { formatApiError } from "../services/api";
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Regisztráció" },
-    { name: "description", content: "Új fiók létrehozása." },
+    { title: "Sign Up" },
+    { name: "description", content: "Create a new account." },
   ];
 }
 
@@ -90,14 +90,14 @@ export default function SignUp() {
   const strength = passwordStrength(password);
   const strengthLabel =
     strength === 0
-      ? "Túl rövid"
+      ? "Too Short"
       : strength === 1
-        ? "Gyenge"
+        ? "Weak"
         : strength === 2
-          ? "Közepes"
+          ? "Fair"
           : strength === 3
-            ? "Jó"
-            : "Erős";
+            ? "Good"
+            : "Strong";
 
   const canSubmit =
     username &&
@@ -117,27 +117,27 @@ export default function SignUp() {
     setSuccess(null);
 
     if (!username || !email || !password || !confirmPassword) {
-      setError({ message: "Kérjük, töltse ki az összes mezőt." });
+      setError({ message: "Please fill in all fields." });
       return;
     }
 
     if (!isUsernameValid(username)) {
       setError({
         message:
-          "Felhasználónév 3–30 karakter és csak betűk, számok vagy aláhúzásokat tartalmazhat.",
+          "Username must be 3-30 characters and can only contain letters, numbers, or underscores.",
       });
       return;
     }
 
     if (password !== confirmPassword) {
-      setError({ message: "A jelszavak nem egyeznek." });
+      setError({ message: "Passwords do not match." });
       return;
     }
 
     if (passwordStrength(password) < 2) {
       setError({
         message:
-          "A jelszó túl Gyenge. Használjon hosszabb jelszót számokkal és szimbólumokkal.",
+          "Password is too weak. Use a longer password with numbers and symbols.",
       });
       return;
     }
@@ -148,7 +148,7 @@ export default function SignUp() {
       await api.signup(username, email, password, fullName || undefined);
 
       // On success show inline message
-      setSuccess("Fiók létrehozva. Bejelentkezés...");
+      setSuccess("Account created. Logging in...");
 
       // Auto-login the user so we can flush pending saves and redirect back
       await api.login(username, password);
@@ -193,7 +193,7 @@ export default function SignUp() {
     <div className="flex items-center justify-center min-h-screen bg-gray-50">
       <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md">
         <h1 className="text-3xl font-bold text-center text-gray-900">
-          Fiók létrehozása
+          Create Account
         </h1>
 
         <form onSubmit={handleSignUp} className="space-y-4" noValidate>
@@ -202,7 +202,7 @@ export default function SignUp() {
               htmlFor="username"
               className="text-sm font-medium text-gray-700"
             >
-              Felhasználónév
+              Username
             </label>
             <input
               type="text"
@@ -220,11 +220,11 @@ export default function SignUp() {
               className="w-full px-3 py-2 mt-1 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
             />
             <p className="text-xs text-gray-500 mt-1">
-              3–30 karakter; csak betűk, számok és aláhúzások.
+              3-30 characters; letters, numbers, and underscores only.
             </p>
             {!isUsernameValid(username) && username.length > 0 && (
               <p className="text-xs text-red-600 mt-1">
-                A felhasználónév nem megfelelő formátumú.
+                Username format is invalid.
               </p>
             )}
             {fieldErrors.username && (
@@ -239,7 +239,7 @@ export default function SignUp() {
               htmlFor="fullName"
               className="text-sm font-medium text-gray-700"
             >
-              Teljes név (opcionális)
+              Full Name (Optional)
             </label>
             <input
               type="text"
@@ -255,7 +255,7 @@ export default function SignUp() {
               htmlFor="email"
               className="text-sm font-medium text-gray-700"
             >
-              Email-cím
+              Email Address
             </label>
             <input
               type="email"
@@ -282,7 +282,7 @@ export default function SignUp() {
               htmlFor="password"
               className="text-sm font-medium text-gray-700"
             >
-              Jelszó
+              Password
             </label>
             <input
               type="password"
@@ -311,7 +311,7 @@ export default function SignUp() {
                 />
               </div>
               <p className="text-xs text-gray-600 mt-1">
-                Erősség: {strengthLabel}
+                Strength: {strengthLabel}
               </p>
             </div>
           </div>
@@ -321,7 +321,7 @@ export default function SignUp() {
               htmlFor="confirmPassword"
               className="text-sm font-medium text-gray-700"
             >
-              Jelszó megerősítése
+              Confirm Password
             </label>
             <input
               type="password"
@@ -336,7 +336,7 @@ export default function SignUp() {
             />
             {password !== confirmPassword && confirmPassword.length > 0 && (
               <p className="text-xs text-red-600 mt-1">
-                Jelszavak nem egyeznek.
+                Passwords do not match.
               </p>
             )}
           </div>
@@ -353,17 +353,17 @@ export default function SignUp() {
                 : "bg-green-600 hover:bg-green-700"
             } rounded-md focus:outline-none cursor-pointer focus:ring-2 focus:ring-offset-2 focus:ring-green-500`}
           >
-            {loading ? "Regisztráció folyamatban..." : "Regisztráció"}
+            {loading ? "Signing up..." : "Sign Up"}
           </button>
         </form>
 
         <p className="text-sm text-center text-gray-600">
-          Már van fiókod?{" "}
+          Already have an account?{" "}
           <Link
             to="/login"
             className="font-medium text-blue-600 hover:underline cursor-pointer"
           >
-            Jelentkezz be
+            Log In
           </Link>
         </p>
       </div>

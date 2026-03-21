@@ -45,7 +45,7 @@ export default function ProfileLayout({
         <aside className="md:w-1/4">
           <div className="sticky top-6 space-y-4">
             <div className="p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-700 mb-3">Fiók</h2>
+              <h2 className="text-lg font-semibold text-gray-700 mb-3">Account</h2>
 
               <nav
                 className="flex flex-col space-y-2"
@@ -61,7 +61,7 @@ export default function ProfileLayout({
                   }`}
                   aria-current={activeView === "profile" ? "page" : undefined}
                 >
-                  Profilom
+                  My Profile
                 </button>
 
                 <button
@@ -74,19 +74,19 @@ export default function ProfileLayout({
                   }`}
                   aria-current={activeView === "recipes" ? "page" : undefined}
                 >
-                  Mentett receptek
+                  Saved Recipes
                 </button>
               </nav>
             </div>
 
             <div className="p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
-              <h3 className="text-sm text-gray-500">Műveletek</h3>
+              <h3 className="text-sm text-gray-500">Actions</h3>
               <div className="mt-3 flex flex-col gap-2">
                 <Link
                   to="/"
                   className="inline-block text-sm px-3 py-2 rounded bg-green-500 text-white text-center hover:bg-green-600"
                 >
-                  Recept generálása
+                  Generate Recipe
                 </Link>
               </div>
             </div>
@@ -119,42 +119,40 @@ export function ProfileDetails({ user }: { user: ApiUser }) {
         id="profile-heading"
         className="text-3xl md:text-4xl font-bold text-gray-800 mb-6"
       >
-        Profilom
+        My Profile
       </h1>
 
       <div className="p-6 bg-white border border-gray-200 rounded-lg shadow-sm">
-        <h2 className="text-2xl font-semibold text-gray-700 mb-4">
-          Profil adatai
-        </h2>
+        <h2 className="text-2xl font-semibold text-gray-700 mb-4">Profile Details</h2>
 
         <div className="grid grid-cols-1 gap-3 text-gray-600">
           <div>
-            <p className="text-sm text-gray-500">Felhasználónév</p>
+            <p className="text-sm text-gray-500">Username</p>
             <p className="font-medium text-gray-800">
               {user.username}
             </p>
           </div>
           <div>
-            <p className="text-sm text-gray-500">Név</p>
+            <p className="text-sm text-gray-500">Name</p>
             {user.full_name ?
               <p className="font-medium text-gray-800">
                 {user.full_name }
               </p>
             : <p className="font-medium text-gray-800 italic">
-                Nem adott meg nevet
+                No name provided
               </p>
             }
           </div>
 
           <div>
-            <p className="text-sm text-gray-500">Email-cím</p>
+            <p className="text-sm text-gray-500">Email Address</p>
             <p className="font-medium text-gray-800">{user.email}</p>
           </div>
         </div>
 
         <div className="mt-6">
           <button className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer">
-            Profil szerkesztése
+            Edit Profile
           </button>
         </div>
       </div>
@@ -196,7 +194,7 @@ export function SavedRecipesList({ recipes }: { recipes?: ApiRecipe[] }) {
         console.error("Failed to delete saved recipe", err);
         // Friendly feedback to user
         // eslint-disable-next-line no-alert
-        alert("A recept törlése nem sikerült. Próbáld újra később.");
+        alert("Failed to delete recipe. Please try again later.");
       }
     },
     [setItems],
@@ -208,7 +206,7 @@ export function SavedRecipesList({ recipes }: { recipes?: ApiRecipe[] }) {
         id="saved-recipes-heading"
         className="text-3xl md:text-4xl font-bold text-gray-800 mb-6"
       >
-        Mentett receptek
+        Saved Recipes
       </h1>
 
       {items && items.length > 0 ? (
@@ -258,7 +256,7 @@ export function SavedRecipesList({ recipes }: { recipes?: ApiRecipe[] }) {
                       state={{ recipe: r }}
                       className="px-3 py-1 text-sm rounded bg-green-500 text-white hover:bg-green-600"
                     >
-                      Megnyitás
+                      Open
                     </Link>
 
                     <button
@@ -266,7 +264,7 @@ export function SavedRecipesList({ recipes }: { recipes?: ApiRecipe[] }) {
                       onClick={() => handleDelete(idStr)}
                       className="px-3 py-1 text-sm rounded bg-red-500 text-white hover:bg-red-600 cursor-pointer"
                     >
-                      Törlés
+                      Delete
                     </button>
                   </div>
                 </div>
@@ -276,12 +274,12 @@ export function SavedRecipesList({ recipes }: { recipes?: ApiRecipe[] }) {
         </div>
       ) : (
         <div className="p-8 bg-white border border-gray-200 rounded-lg shadow-sm text-center">
-          <p className="text-gray-500">Nincs mentett recepted.</p>
+          <p className="text-gray-500">You have no saved recipes yet.</p>
           <Link
             to="/"
             className="mt-4 inline-block px-4 py-2 rounded bg-green-500 text-white hover:bg-green-600"
           >
-            Recept generálása
+            Generate Recipe
           </Link>
         </div>
       )}

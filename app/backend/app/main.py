@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
 import json
 import logging
-from typing import Any, Dict
+import os
+from typing import Any, AsyncIterator, Dict
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.auth import User as AuthUser
+from app.auth import get_current_active_user
 from app.auth import router as auth_router
 from app.db.models import SavedRecipe as DBSavedRecipe
 from app.db.models import User as DBUser
@@ -20,18 +26,44 @@ from app.db.session import get_db
 
 # Use absolute package imports within the backend package so the module can be
 # executed reliably whether started via `uvicorn app.main:app` or as part of a larger project.
-from app.models import ErrorResponse, Recipe, RecipeRequest
+from app.models import DualRecipeResponse, ErrorResponse, Recipe, RecipeRequest
 from app.services import (
     generate_recipe_from_ingredients,
     get_empty_recipes,
 )
 
-app = FastAPI(title="Recipe Generator Backend", version="0.1.0")
-
 # Basic logging setup: prefer the uvicorn logger when running under uvicorn, otherwise fall back to module logger.
 logging.basicConfig(level=logging.INFO)
 _uvicorn_logger = logging.getLogger("uvicorn.error")
 logger = _uvicorn_logger if _uvicorn_logger.handlers else logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Initialize application resources before serving requests."""
+    max_attempts = 10
+    delay_seconds = 2
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            _create_db()
+            logger.info("Database schema is ready")
+            break
+        except SQLAlchemyError as exc:
+            logger.warning(
+                "Database schema init failed (attempt %s/%s): %s",
+                attempt,
+                max_attempts,
+                exc,
+            )
+            if attempt == max_attempts:
+                raise
+            await asyncio.sleep(delay_seconds)
+
+    yield
+
+
+app = FastAPI(title="Recipe Generator Backend", version="0.1.0", lifespan=lifespan)
 
 # Mount auth router so token endpoints (e.g. /auth/token) appear in OpenAPI/docs
 app.include_router(auth_router)
@@ -87,9 +119,9 @@ async def auth_cookie_middleware(request: Request, call_next):
 
         return await call_next(request)
     except Exception as exc:
-        # Fail-safe: log and continue to let the request proceed; avoid blocking app.
+        # Fail-safe: do not call downstream a second time after an exception in this middleware.
         logger.exception("auth_cookie_middleware error: %s", exc)
-        return await call_next(request)
+        raise
 
 
 # Register middleware early
@@ -242,19 +274,19 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 
 # Enable CORS for local frontend development (Vite dev server)
-# Adjust or restrict origins as needed for production.
-origins = [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://localhost:3000",
-]
+# Adjust via CORS_ORIGINS env (comma-separated) for production.
+raw_origins = os.getenv(
+    "CORS_ORIGINS",
+    "http://localhost:5173,http://localhost:5174,http://localhost:3000",
+)
+origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
 
@@ -273,29 +305,55 @@ async def list_recipes() -> list[Recipe]:
 @app.post("/admin/db/create", status_code=status.HTTP_201_CREATED)
 def create_database() -> dict:
     """Create database tables (development helper)."""
+    if os.getenv("ENVIRONMENT", "development").lower() == "production":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": "Not found", "code": "not_found"},
+        )
     _create_db()
     return {"detail": "database tables created"}
 
 
 @app.post(
     "/recipes/generate",
-    response_model=Recipe,
     responses={400: {"model": ErrorResponse}},
 )
-async def generate_recipe(request: RecipeRequest) -> Recipe:
-    """Generate a recipe from ingredients."""
+async def generate_recipe(request: RecipeRequest) -> Recipe | DualRecipeResponse:
+    """Generate a recipe from ingredients using AI models.
+
+    Args:
+        request: RecipeRequest with ingredients and optional model choice
+                - ingredients: list of ingredient names
+                - model: 'scratch', 'finetuned', or 'both' (default: 'finetuned')
+
+    Returns:
+        Recipe or DualRecipeResponse (if model='both')
+    """
     try:
-        return generate_recipe_from_ingredients(request.ingredients)
+        result = generate_recipe_from_ingredients(
+            request.ingredients, model_choice=request.model.value
+        )
+        return result
     except ValueError as exc:  # invalid / empty input
-        # Return structured error
         raise HTTPException(
             status_code=400, detail={"message": str(exc), "code": "invalid_input"}
+        ) from exc
+    except Exception as exc:
+        logger.error(f"Recipe generation error: {exc}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": "Failed to generate recipe",
+                "code": "generation_error",
+            },
         ) from exc
 
 
 @app.post("/user/saved-recipes", status_code=status.HTTP_201_CREATED)
 async def save_recipe_endpoint(
-    recipe: Recipe, username: str = "demo", db: Session = Depends(get_db)
+    recipe: Recipe,
+    current_user: AuthUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """
     Save a generated recipe for a user.
@@ -304,27 +362,25 @@ async def save_recipe_endpoint(
     - Query param: username (defaults to 'demo' for local development)
     - Returns: { id: <saved id>, savedAt: <iso timestamp> }
     """
-    # Find or create the user (development convenience behavior)
-    user = db.query(DBUser).filter(DBUser.username == username).first()
-    if user is None:
-        # create a minimal user record for local development
-        user = DBUser(
-            username=username,
-            email=f"{username}@example.local",
-            password_hash="",  # no auth in MVP; store empty hash for demo
-            full_name=None,
-            is_active=True,
+    if not current_user.username:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"message": "Could not validate credentials", "code": "invalid_credentials"},
         )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
+
+    db_user = db.query(DBUser).filter(DBUser.username == current_user.username).first()
+    if db_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": "User not found", "code": "not_found"},
+        )
 
     # Serialize recipe to a JSON-compatible dict
     recipe_data = recipe.model_dump()
     title = recipe_data.get("title") or recipe_data.get("name") or "Saved recipe"
 
     # Create DB saved recipe record
-    saved = DBSavedRecipe(user_id=user.id, title=title, recipe_data=recipe_data)
+    saved = DBSavedRecipe(user_id=db_user.id, title=title, recipe_data=recipe_data)
     db.add(saved)
     db.commit()
     db.refresh(saved)
@@ -351,7 +407,8 @@ async def save_recipe_endpoint(
 
 @app.get("/user/saved-recipes", response_model=list[Recipe])
 async def get_saved_recipes_endpoint(
-    username: str = "demo", db: Session = Depends(get_db)
+    current_user: AuthUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ) -> list[Recipe]:
     """Return saved recipes for a user (development).
 
@@ -360,23 +417,22 @@ async def get_saved_recipes_endpoint(
       present for that user we create a sensible default saved-recipe so the
       frontend and tests can rely on at least one example item.
     """
-    user = db.query(DBUser).filter(DBUser.username == username).first()
-    if user is None:
-        # Create a minimal demo user for local development
-        user = DBUser(
-            username=username,
-            email=f"{username}@example.local",
-            password_hash="",  # no auth in MVP; store empty hash for demo
-            full_name=None,
-            is_active=True,
+    if not current_user.username:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"message": "Could not validate credentials", "code": "invalid_credentials"},
         )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
+
+    db_user = db.query(DBUser).filter(DBUser.username == current_user.username).first()
+    if db_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": "User not found", "code": "not_found"},
+        )
 
     saved_items = (
         db.query(DBSavedRecipe)
-        .filter(DBSavedRecipe.user_id == user.id)
+        .filter(DBSavedRecipe.user_id == db_user.id)
         .order_by(DBSavedRecipe.created_at.desc())
         .all()
     )
@@ -398,7 +454,9 @@ async def get_saved_recipes_endpoint(
 
 @app.get("/user/saved-recipes/{saved_id}", response_model=Recipe)
 async def get_saved_recipe_endpoint(
-    saved_id: str, username: str = "demo", db: Session = Depends(get_db)
+    saved_id: str,
+    current_user: AuthUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ) -> Recipe:
     """
     Return a single saved recipe by its id for the given user.
@@ -407,9 +465,14 @@ async def get_saved_recipe_endpoint(
     - Query param: username (defaults to 'demo' for local development)
     - Returns: Recipe JSON (same shape as GET /user/saved-recipes items)
     """
-    # Ensure user existence (same dev convenience behavior as other endpoints)
-    user = db.query(DBUser).filter(DBUser.username == username).first()
-    if user is None:
+    if not current_user.username:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"message": "Could not validate credentials", "code": "invalid_credentials"},
+        )
+
+    db_user = db.query(DBUser).filter(DBUser.username == current_user.username).first()
+    if db_user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"message": "User not found", "code": "not_found"},
@@ -417,7 +480,7 @@ async def get_saved_recipe_endpoint(
 
     saved = (
         db.query(DBSavedRecipe)
-        .filter(DBSavedRecipe.id == saved_id, DBSavedRecipe.user_id == user.id)
+        .filter(DBSavedRecipe.id == saved_id, DBSavedRecipe.user_id == db_user.id)
         .first()
     )
 
@@ -454,7 +517,9 @@ async def get_saved_recipe_endpoint(
 
 @app.delete("/user/saved-recipes/{saved_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_saved_recipe_endpoint(
-    saved_id: str, username: str = "demo", db: Session = Depends(get_db)
+    saved_id: str,
+    current_user: AuthUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """
     Delete a saved recipe by id for the given user.
@@ -463,8 +528,14 @@ async def delete_saved_recipe_endpoint(
     - Query param: username (defaults to 'demo' for local development)
     - Returns: 204 No Content on success, 404 if not found.
     """
-    user = db.query(DBUser).filter(DBUser.username == username).first()
-    if user is None:
+    if not current_user.username:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"message": "Could not validate credentials", "code": "invalid_credentials"},
+        )
+
+    db_user = db.query(DBUser).filter(DBUser.username == current_user.username).first()
+    if db_user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"message": "User not found", "code": "not_found"},
@@ -472,7 +543,7 @@ async def delete_saved_recipe_endpoint(
 
     saved = (
         db.query(DBSavedRecipe)
-        .filter(DBSavedRecipe.id == saved_id, DBSavedRecipe.user_id == user.id)
+        .filter(DBSavedRecipe.id == saved_id, DBSavedRecipe.user_id == db_user.id)
         .first()
     )
 

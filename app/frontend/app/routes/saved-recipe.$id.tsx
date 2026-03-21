@@ -42,22 +42,22 @@ export const clientAction = async ({ params }: ClientActionFunctionArgs) => {
 
   try {
     await api.deleteSavedRecipe(params.id);
-    // Sikeres törlés után azonnal dobunk egy redirectet
+    // After successful deletion, we immediately throw a redirect
     throw redirect("/profile");
   } catch (error) {
-    // Ha az error maga a redirect (Response), engedjük tovább!
+    // If the error itself is the redirect (Response), re-throw it!
     if (error instanceof Response) {
       throw error;
     }
-    console.error("Törlési hiba:", error);
-    return { error: "Nem sikerült törölni a receptet." };
+    console.error("Deletion error:", error);
+    return { error: "Failed to delete the recipe." };
   }
 };
 
 export function shouldRevalidate({ formMethod, defaultShouldRevalidate }: any) {
-  // Ha POST (vagy DELETE) metódussal küldtük az űrlapot,
-  // akkor tudjuk, hogy az adat törlődött/változott, és redirect jön.
-  // Ilyenkor NE töltsük újra a jelenlegi oldal loaderét!
+  // If POST (or DELETE) method is used,
+  // we know the data was deleted/changed, and redirect is coming.
+  // In this case, do NOT re-load the current page loader!
   if (formMethod === "POST" || formMethod === "DELETE") {
     return false;
   }
@@ -87,25 +87,23 @@ export default function RecipeView() {
       <div className="max-w-4xl mx-auto p-6">
         <div className="bg-white border border-gray-200 rounded-lg shadow p-8 text-center">
           <h1 className="text-3xl font-bold mb-4">
-            Nincs megjeleníthető recept
+            No Recipe to Display
           </h1>
           <p className="text-gray-600 mb-6">
-            Úgy tűnik, a megadott recept nem található vagy a betöltés
-            sikertelen volt. Ellenőrizd az URL-t vagy generálj egy receptet a
-            főoldalon.
+            It seems the specified recipe was not found or failed to load. Check the URL or generate a recipe on the home page.
           </p>
           <div className="flex justify-center gap-4">
             <Link
               to="/"
               className="px-6 py-3 bg-green-500 text-white rounded-md hover:bg-green-600 cursor-pointer"
             >
-              Recept generálása
+              Generate Recipe
             </Link>
             <Link
               to="/profile"
               className="px-6 py-3 bg-blue-500 text-white rounded-md hover:bg-blue-600"
             >
-              Profil
+              Profile
             </Link>
           </div>
         </div>
@@ -117,16 +115,16 @@ export default function RecipeView() {
     <div className="max-w-5xl mx-auto p-6">
       <div className="bg-white border border-gray-200 rounded-lg shadow p-8">
         <h1 className="text-4xl font-bold text-gray-800 mb-4">
-          {title ?? "Generált recept"}
+          {title ?? "Generated Recipe"}
         </h1>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div className="md:col-span-1">
             <h2 className="text-2xl font-semibold text-gray-700 mb-3">
-              Hozzávalók
+              Ingredients
             </h2>
             {ingredients.length === 0 ? (
-              <p className="text-gray-500">Nincsenek hozzávalók.</p>
+              <p className="text-gray-500">No ingredients.</p>
             ) : (
               <ul className="list-disc list-inside space-y-2 text-gray-600">
                 {ingredients.map((ing, idx) => (
@@ -143,10 +141,10 @@ export default function RecipeView() {
 
           <div className="md:col-span-2">
             <h2 className="text-2xl font-semibold text-gray-700 mb-3">
-              Elkészítés
+              Instructions
             </h2>
             {steps.length === 0 ? (
-              <p className="text-gray-500">Nincsenek előkészített lépések.</p>
+              <p className="text-gray-500">No preparation steps.</p>
             ) : (
               <ol className="list-decimal list-inside space-y-3 text-gray-600">
                 {steps.map((step, idx) => (
@@ -157,21 +155,21 @@ export default function RecipeView() {
           </div>
         </div>
 
-        {/* Lábléc / Gombok */}
+        {/* Footer / Buttons */}
         <div className="mt-12 flex items-center justify-between border-t border-gray-100 pt-6">
           <Link
             to="/profile"
             className="text-gray-500 hover:text-gray-800 font-medium transition-colors"
           >
-            ← Vissza a profilhoz
+            ← Back to Profile
           </Link>
 
           <div className="flex gap-4">
-            {/* Törlés gomb Action-ön keresztül */}
+            {/* Delete button via Action */}
             <Form
               method="post"
               onSubmit={async (e) => {
-                if (!confirm("Biztosan törölni szeretnéd ezt a receptet?")) {
+                if (!confirm("Are you sure you want to delete this recipe?")) {
                   e.preventDefault();
                 }
               }}
@@ -181,7 +179,7 @@ export default function RecipeView() {
                 disabled={isDeleting}
                 className="px-6 py-2 rounded-md border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors cursor-pointer"
               >
-                Recept törlése
+                Delete Recipe
               </button>
             </Form>
 
@@ -189,7 +187,7 @@ export default function RecipeView() {
               to="/"
               className="px-6 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 shadow-sm transition-colors"
             >
-              Új generálása
+              Generate New Recipe
             </Link>
           </div>
         </div>

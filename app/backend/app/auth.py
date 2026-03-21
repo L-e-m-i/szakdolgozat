@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 import uuid
+from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import jwt
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jwt.exceptions import InvalidTokenError
 from pwdlib import PasswordHash
@@ -22,14 +25,32 @@ from app.db.session import get_db
 # Load .env from backend root if present
 load_dotenv()
 
-SECRET_KEY = os.getenv(
-    "SECRET_KEY",
-    "change-me-local",
-)
+SECRET_KEY = os.getenv("SECRET_KEY")
+
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY environment variable is required")
 ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 # How long refresh tokens are valid (in days). Adjust as needed.
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+
+AUTH_COOKIE_NAME = os.getenv("AUTH_COOKIE_NAME", "recipe_access_token")
+REFRESH_COOKIE_NAME = os.getenv("REFRESH_COOKIE_NAME", "recipe_refresh_token")
+COOKIE_DOMAIN = os.getenv("AUTH_COOKIE_DOMAIN") or None
+_default_cookie_secure = (
+    os.getenv("ENVIRONMENT", "development").lower() == "production"
+)
+COOKIE_SECURE = os.getenv(
+    "AUTH_COOKIE_SECURE", "1" if _default_cookie_secure else "0"
+) in ("1", "true", "True", "yes", "YES")
+COOKIE_SAMESITE = os.getenv("AUTH_COOKIE_SAMESITE", "lax")
+
+LOGIN_LIMIT_COUNT = int(os.getenv("RATE_LIMIT_LOGIN_COUNT", "20"))
+LOGIN_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_LOGIN_WINDOW_SECONDS", "60"))
+SIGNUP_LIMIT_COUNT = int(os.getenv("RATE_LIMIT_SIGNUP_COUNT", "20"))
+SIGNUP_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_SIGNUP_WINDOW_SECONDS", "300"))
+REFRESH_LIMIT_COUNT = int(os.getenv("RATE_LIMIT_REFRESH_COUNT", "40"))
+REFRESH_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_REFRESH_WINDOW_SECONDS", "60"))
 
 password_hash = PasswordHash.recommended()
 
@@ -37,6 +58,9 @@ password_hash = PasswordHash.recommended()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+_rate_limit_events: dict[str, deque[float]] = defaultdict(deque)
+_rate_limit_lock = threading.Lock()
 
 
 # --- Pydantic models exposed by the router ---------------------------------
@@ -69,6 +93,57 @@ class UserCreate(BaseModel):
 
 class UserInDB(User):
     hashed_password: str
+
+
+def _rate_limit_or_raise(request: Request, scope: str, limit: int, window_seconds: int) -> None:
+    """Simple in-memory sliding-window limiter by client IP and scope."""
+    client_ip = request.client.host if request.client and request.client.host else "unknown"
+    key = f"{scope}:{client_ip}"
+    now = time.monotonic()
+    cutoff = now - window_seconds
+
+    with _rate_limit_lock:
+        q = _rate_limit_events[key]
+        while q and q[0] <= cutoff:
+            q.popleft()
+        if len(q) >= limit:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail={
+                    "message": "Too many requests. Please try again later.",
+                    "code": "rate_limited",
+                },
+            )
+        q.append(now)
+
+
+def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
+    """Set secure auth cookies so frontend JS does not need token access."""
+    response.set_cookie(
+        key=AUTH_COOKIE_NAME,
+        value=access_token,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        domain=COOKIE_DOMAIN,
+        path="/",
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=refresh_token,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        domain=COOKIE_DOMAIN,
+        path="/auth",
+        max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+    )
+
+
+def _clear_auth_cookies(response: Response) -> None:
+    response.delete_cookie(key=AUTH_COOKIE_NAME, domain=COOKIE_DOMAIN, path="/")
+    response.delete_cookie(key=REFRESH_COOKIE_NAME, domain=COOKIE_DOMAIN, path="/auth")
 
 
 # --- Password helpers -----------------------------------------------------
@@ -137,15 +212,17 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 # --- Refresh token helpers & Dependencies for routes ----------------------
 def _create_refresh_token_record(db: Session, db_user: DBUser) -> str:
     """
-    Create a server-side refresh token record and return the raw token string.
-    We store the token as-is here for simplicity; in production you should store a hashed
-    value and only return the plaintext token to the client once.
+    Create a server-side refresh token record and return a client-facing token.
+
+    The database stores only a hash of the secret part. The client receives a composite
+    token in the form: <token_id>.<raw_secret>.
     """
-    token_str = uuid.uuid4().hex
+    raw_secret = uuid.uuid4().hex
+    token_hash = get_password_hash(raw_secret)
     expires_at = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     rt = DBRefreshToken(
         user_id=db_user.id,
-        token=token_str,
+        token=token_hash,
         expires_at=expires_at,
         revoked=False,
     )
@@ -153,13 +230,27 @@ def _create_refresh_token_record(db: Session, db_user: DBUser) -> str:
     db.commit()
     # refresh the instance so created_at / id are present
     db.refresh(rt)
-    return token_str
+    return f"{rt.id}.{raw_secret}"
+
+
+def _split_refresh_token(token_str: str) -> tuple[str, str] | None:
+    """Parse <token_id>.<raw_secret> format and return components."""
+    if not token_str or "." not in token_str:
+        return None
+    token_id, raw_secret = token_str.split(".", 1)
+    if not token_id or not raw_secret:
+        return None
+    return token_id, raw_secret
 
 
 def _revoke_refresh_token(db: Session, token_str: str) -> None:
-    """Mark a refresh token as revoked (if it exists)."""
-    rt = db.query(DBRefreshToken).filter(DBRefreshToken.token == token_str).first()
-    if rt:
+    """Mark a refresh token as revoked only when presented token is valid."""
+    parts = _split_refresh_token(token_str)
+    if not parts:
+        return
+    token_id, raw_secret = parts
+    rt = db.query(DBRefreshToken).filter(DBRefreshToken.id == token_id).first()
+    if rt and verify_password(raw_secret, rt.token):
         rt.revoked = True
         db.add(rt)
         db.commit()
@@ -167,10 +258,16 @@ def _revoke_refresh_token(db: Session, token_str: str) -> None:
 
 def _validate_refresh_token(db: Session, token_str: str) -> Optional[DBRefreshToken]:
     """Return the refresh token DB record if valid (not revoked and not expired), else None."""
-    rt = db.query(DBRefreshToken).filter(DBRefreshToken.token == token_str).first()
+    parts = _split_refresh_token(token_str)
+    if not parts:
+        return None
+    token_id, raw_secret = parts
+    rt = db.query(DBRefreshToken).filter(DBRefreshToken.id == token_id).first()
     if not rt or rt.revoked:
         return None
     if rt.expires_at and rt.expires_at < datetime.now(timezone.utc):
+        return None
+    if not verify_password(raw_secret, rt.token):
         return None
     return rt
 
@@ -226,13 +323,23 @@ async def get_current_active_user(
 # --- Routes ---------------------------------------------------------------
 @router.post("/token", response_model=Token)
 async def login_for_access_token(
-    form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
+    request: Request,
+    response: Response,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
 ):
     """
     Exchange username & password for an access token.
 
     Uses the database user table for authentication.
     """
+    _rate_limit_or_raise(
+        request,
+        scope="auth:login",
+        limit=LOGIN_LIMIT_COUNT,
+        window_seconds=LOGIN_LIMIT_WINDOW_SECONDS,
+    )
+
     user = authenticate_user(db, form_data.username, form_data.password)
     if not user:
         raise HTTPException(
@@ -261,21 +368,40 @@ async def login_for_access_token(
     # Create and persist a refresh token
     refresh_token_str = _create_refresh_token_record(db, db_user)
 
+    _set_auth_cookies(response, access_token=access_token, refresh_token=refresh_token_str)
+
     return Token(
         access_token=access_token,
         token_type="bearer",
-        refresh_token=refresh_token_str,
+        # Keep refresh token out of JSON responses; it is sent only via HttpOnly cookie.
+        refresh_token=None,
         expires_in=int(access_token_expires.total_seconds()),
     )
 
 
 @router.post("/refresh", response_model=Token)
-async def refresh_access_token(payload: dict, db: Session = Depends(get_db)):
+async def refresh_access_token(
+    request: Request,
+    response: Response,
+    payload: dict | None = None,
+    db: Session = Depends(get_db),
+):
     """
     Exchange a valid refresh token for a new access token (and rotate the refresh token).
-    Payload expected: { "refresh_token": "<token>" }
+    Reads refresh token from payload or HttpOnly cookie.
     """
-    token_str = payload.get("refresh_token") if isinstance(payload, dict) else None
+    _rate_limit_or_raise(
+        request,
+        scope="auth:refresh",
+        limit=REFRESH_LIMIT_COUNT,
+        window_seconds=REFRESH_LIMIT_WINDOW_SECONDS,
+    )
+
+    token_str = None
+    if isinstance(payload, dict):
+        token_str = payload.get("refresh_token")
+    if not token_str:
+        token_str = request.cookies.get(REFRESH_COOKIE_NAME)
     if not token_str:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -316,33 +442,52 @@ async def refresh_access_token(payload: dict, db: Session = Depends(get_db)):
         data={"sub": db_user.username}, expires_delta=access_token_expires
     )
 
+    _set_auth_cookies(response, access_token=access_token, refresh_token=new_refresh)
+
     return Token(
         access_token=access_token,
         token_type="bearer",
-        refresh_token=new_refresh,
+        refresh_token=None,
         expires_in=int(access_token_expires.total_seconds()),
     )
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(payload: dict, db: Session = Depends(get_db)):
+async def logout(request: Request, response: Response, payload: dict | None = None, db: Session = Depends(get_db)):
     """
     Revoke a refresh token (logout). Payload: { "refresh_token": "<token>" }
     """
     token_str = payload.get("refresh_token") if isinstance(payload, dict) else None
-    if token_str:
-        _revoke_refresh_token(db, token_str)
+    if not token_str:
+        token_str = request.cookies.get(REFRESH_COOKIE_NAME)
+    if not token_str:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "message": "Missing refresh_token",
+                "code": "missing_refresh_token",
+            },
+        )
+    _revoke_refresh_token(db, token_str)
+    _clear_auth_cookies(response)
     return None
 
 
 @router.post("/signup", response_model=User, status_code=status.HTTP_201_CREATED)
-async def signup(user_in: UserCreate, db: Session = Depends(get_db)):
+async def signup(request: Request, user_in: UserCreate, db: Session = Depends(get_db)):
     """
     Register a new user.
 
     - This is a convenience endpoint for local development/demo.
     - In production you should add email verification, rate-limiting and stronger validation.
     """
+    _rate_limit_or_raise(
+        request,
+        scope="auth:signup",
+        limit=SIGNUP_LIMIT_COUNT,
+        window_seconds=SIGNUP_LIMIT_WINDOW_SECONDS,
+    )
+
     existing = db.query(DBUser).filter(DBUser.username == user_in.username).first()
     if existing:
         raise HTTPException(

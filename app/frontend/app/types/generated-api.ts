@@ -201,7 +201,15 @@ export interface paths {
         put?: never;
         /**
          * Generate Recipe
-         * @description Generate a recipe from ingredients.
+         * @description Generate a recipe from ingredients using AI models.
+         *
+         *     Args:
+         *         request: RecipeRequest with ingredients and optional model choice
+         *                 - ingredients: list of ingredient names
+         *                 - model: 'scratch', 'finetuned', or 'both' (default: 'finetuned')
+         *
+         *     Returns:
+         *         Recipe or DualRecipeResponse (if model='both')
          */
         post: operations["generate_recipe_recipes_generate_post"];
         delete?: never;
@@ -304,8 +312,16 @@ export interface components {
             client_secret?: string | null;
         };
         /**
+         * DualRecipeResponse
+         * @description Response when model='both': contains one recipe from each model.
+         */
+        DualRecipeResponse: {
+            scratch: components["schemas"]["Recipe"];
+            finetuned: components["schemas"]["Recipe"];
+        };
+        /**
          * ErrorResponse
-         * @description Hibaüzenet API válaszhoz (US-04).
+         * @description Error message for API responses (US-04).
          */
         ErrorResponse: {
             /** Detail */
@@ -317,29 +333,47 @@ export interface components {
             detail?: components["schemas"]["ValidationError"][];
         };
         /**
+         * ModelChoice
+         * @description Which AI model to use for recipe generation.
+         * @enum {string}
+         */
+        ModelChoice: "scratch" | "finetuned" | "both";
+        /**
          * Recipe
-         * @description Generált recept szerkezete.
+         * @description Structure of a generated recipe.
          *
-         *     - id: opcionális mentett azonosító (ha a recept mentve lett)
-         *     - title: recept címe
-         *     - ingredients: hozzávalók listája
-         *     - steps: számozott lépések (US-03)
+         *     - id: optional saved identifier (if the recipe was saved)
+         *     - title: recipe title
+         *     - time: estimated cooking time (optional)
+         *     - ingredients: list of ingredients
+         *     - steps: numbered steps (US-03)
+         *     - model: which model generated it (optional)
          */
         Recipe: {
             /** Id */
             id?: string | null;
             /** Title */
             title: string;
+            /**
+             * Time
+             * @description Estimated cooking time, e.g. '30 mins'
+             */
+            time?: string | null;
             /** Ingredients */
             ingredients: components["schemas"]["RecipeIngredient"][];
             /** Steps */
             steps: string[];
+            /**
+             * Model
+             * @description Which model generated this recipe
+             */
+            model?: string | null;
         };
         /**
          * RecipeIngredient
-         * @description Egy recept hozzávalója.
+         * @description One ingredient in a recipe.
          *
-         *     US-03: strukturált megjelenítés - név + mennyiség/megjelölés.
+         *     US-03: structured display - name + quantity/label.
          */
         RecipeIngredient: {
             /**
@@ -355,9 +389,9 @@ export interface components {
         };
         /**
          * RecipeRequest
-         * @description Bemenet a generáláshoz.
+         * @description Input for generation.
          *
-         *     US-02: felhasználó beír hozzávalókat és kér generálást.
+         *     US-02: user enters ingredients and requests generation.
          */
         RecipeRequest: {
             /**
@@ -365,6 +399,11 @@ export interface components {
              * @description List of ingredient names
              */
             ingredients: string[];
+            /**
+             * @description Which model to use: 'scratch' (RecipeTransformerV4), 'finetuned' (Flan-T5), or 'both' (returns two recipes).
+             * @default finetuned
+             */
+            model: components["schemas"]["ModelChoice"];
         };
         /** Token */
         Token: {
@@ -410,6 +449,10 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
         };
     };
     responses: never;
@@ -677,7 +720,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Recipe"];
+                    "application/json": components["schemas"]["Recipe"] | components["schemas"]["DualRecipeResponse"];
                 };
             };
             /** @description Bad Request */

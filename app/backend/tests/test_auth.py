@@ -80,8 +80,8 @@ def test_token_exchange_refresh_and_logout_flow() -> None:
     """
     Full happy-path:
       - signup
-      - login -> access_token + refresh_token
-      - refresh -> new access + new refresh (rotation)
+    - login -> access_token + refresh cookie
+    - refresh -> new access + rotated refresh cookie
       - logout -> revoke refresh token (204)
       - using revoked refresh token fails
       - protected endpoint requires token and accepts valid token
@@ -99,9 +99,10 @@ def test_token_exchange_refresh_and_logout_flow() -> None:
     assert r.status_code == 200, r.text
     tokens = r.json()
     assert "access_token" in tokens and tokens["access_token"]
-    assert "refresh_token" in tokens and tokens["refresh_token"]
     access_token = tokens["access_token"]
-    refresh_token = tokens["refresh_token"]
+
+    refresh_cookie_before = client.cookies.get("recipe_refresh_token")
+    assert refresh_cookie_before
 
     # access protected endpoint with bearer token
     headers = {"Authorization": f"Bearer {access_token}"}
@@ -111,20 +112,23 @@ def test_token_exchange_refresh_and_logout_flow() -> None:
     assert me["username"] == username
     assert me["email"] == email
 
-    # refresh the access token (rotation) - send json payload
-    r = client.post("/auth/refresh", json={"refresh_token": refresh_token})
+    # refresh the access token (rotation) using HttpOnly cookie
+    r = client.post("/auth/refresh", json={})
     assert r.status_code == 200, r.text
     new_tokens = r.json()
-    assert new_tokens["refresh_token"] != refresh_token
-    new_refresh = new_tokens["refresh_token"]
     new_access = new_tokens["access_token"]
 
-    # logout using the newly issued refresh token (204 No Content expected)
-    r = client.post("/auth/logout", json={"refresh_token": new_refresh})
+    refresh_cookie_after = client.cookies.get("recipe_refresh_token")
+    assert refresh_cookie_after
+    assert refresh_cookie_after != refresh_cookie_before
+
+    # logout using cookie token (204 No Content expected)
+    r = client.post("/auth/logout", json={})
     assert r.status_code == 204
 
-    # trying to refresh with the same (now revoked) token must fail
-    r = client.post("/auth/refresh", json={"refresh_token": new_refresh})
+    # trying to refresh with the old revoked token must fail
+    client.cookies.set("recipe_refresh_token", refresh_cookie_before, path="/auth")
+    r = client.post("/auth/refresh", json={})
     assert r.status_code == 401
     err = r.json()
     assert err.get("code") == "invalid_refresh_token"

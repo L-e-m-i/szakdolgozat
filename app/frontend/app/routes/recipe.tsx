@@ -1,30 +1,61 @@
-import React from "react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
+import React, { useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router";
 import api from "../services/api";
-import type { components, Recipe } from "../types";
+import type { components } from "../types";
 import type { Route } from "./+types/recipe";
+
 type ApiRecipe = components["schemas"]["Recipe"];
 type ApiIngredient = components["schemas"]["RecipeIngredient"];
+
+type DualRecipeResponse = {
+  scratch?: ApiRecipe;
+  finetuned?: ApiRecipe;
+};
 
 /**
  * Recipe view
  *
- * - Prefer recipe passed via navigation state: navigate("/recipe", { state: { recipe } })
- * - Accepts backend shape: { title, ingredients: [{ name, amount? }], steps }
- * - Falls back to legacy frontend shape: { name, ingredients: [{ name, quantity }], steps }
+ * - Prefer recipe(s) passed via navigation state: navigate("/recipe", { state: { recipe } })
+ * - Accepts backend shape for single recipe: { title, ingredients: [{ name, amount? }], steps }
+ * - Accepts DualRecipeResponse for dual models: { scratch: Recipe, finetuned: Recipe }
  * - If no recipe in navigation state, shows a helpful message and link back to generator.
  */
 
- 
-export default function RecipeView({ actionData }: Route.ComponentProps) {
+export default function RecipeView({}: Route.ComponentProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  // The navigator sets state: { recipe }
-  console.log(actionData)
-  type LocationState = { recipe?: ApiRecipe } | undefined;
+  const [activeTab, setActiveTab] = useState<"scratch" | "finetuned">("scratch");
+
+  type LocationState = { recipe?: ApiRecipe | DualRecipeResponse } | undefined;
   const state = (location.state as LocationState) ?? undefined;
-  const recipe = state?.recipe;
-  // Helper accessors to normalize fields across shapes
+  const recipeData = state?.recipe;
+  console.log(recipeData)
+  // Check if it's a DualRecipeResponse
+  const isDualResponse =
+    recipeData &&
+    typeof recipeData === "object" &&
+    ("scratch" in recipeData || "finetuned" in recipeData);
+
+  const getCurrentRecipe = (): ApiRecipe | null => {
+    if (!recipeData) return null;
+
+    if (isDualResponse) {
+      const dualData = recipeData as DualRecipeResponse;
+      if (activeTab === "scratch" && dualData.scratch) {
+        return dualData.scratch;
+      } else if (activeTab === "finetuned" && dualData.finetuned) {
+        return dualData.finetuned;
+      }
+      // Fallback: return whichever is available
+      return dualData.scratch || dualData.finetuned || null;
+    }
+
+    return recipeData as ApiRecipe;
+  };
+
+  const recipe = getCurrentRecipe();
+  console.log(recipe)
+  // Helper accessors to normalize fields
   const title = recipe?.title ?? null;
   const ingredients: { name: string; amount?: string }[] =
     recipe?.ingredients?.map((ing: ApiIngredient) => ({
@@ -32,6 +63,9 @@ export default function RecipeView({ actionData }: Route.ComponentProps) {
       amount: ing.amount ?? undefined,
     })) ?? [];
   const steps: string[] = recipe?.steps ?? [];
+  const cookTime = recipe?.time ?? null;
+  const modelName = recipe?.model ?? null;
+
   const saveRecipe = async () => {
     if (!recipe) return;
     // Build the minimal recipe object the backend expects
@@ -41,12 +75,8 @@ export default function RecipeView({ actionData }: Route.ComponentProps) {
       steps,
     };
     try {
-      // Try to save via API. The API wrapper will return either a server result
-      // or { savedLocally: true } if the recipe was stored locally because the
-      // user wasn't authenticated or the save couldn't be performed.
       const result = await api.saveRecipe(toSave);
-      // If the API indicated the recipe was saved locally (not on server),
-      // let the user know and offer to navigate to login/signup.
+      // If the API indicated the recipe was saved locally
       if (
         result &&
         typeof result === "object" &&
@@ -55,15 +85,13 @@ export default function RecipeView({ actionData }: Route.ComponentProps) {
       ) {
         // eslint-disable-next-line no-alert
         alert(
-          "A recept ideiglenesen elmentve a böngészőbe. Jelentkezz be vagy regisztrálj, hogy elmenthessük a fiókodba.",
+          "Recipe saved temporarily in your browser. Sign in or register to save it to your account.",
         );
-        // Offer quick navigation to login/signup so user can flush local saves after authentication
         // eslint-disable-next-line no-restricted-globals
         if (
           // eslint-disable-next-line no-restricted-globals
-          confirm("Szeretnél bejelentkezni most a recept feltöltéséhez?")
+          confirm("Would you like to log in now to upload this recipe?")
         ) {
-          // Use react-router's navigate to change routes instead of assigning to window.location
           navigate("/login");
         }
         return result;
@@ -71,12 +99,12 @@ export default function RecipeView({ actionData }: Route.ComponentProps) {
 
       // Successful server save
       // eslint-disable-next-line no-alert
-      alert("Recept sikeresen elmentve a szerverre.");
+      alert("Recipe successfully saved to your account!");
       return result;
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error("Save failed", err);
-      // If something went wrong (network, unexpected error), fall back to saving locally
+      // Fallback to local storage
       try {
         const pendingKey = "recipegen_pending_saves";
         const raw = localStorage.getItem(pendingKey);
@@ -89,14 +117,14 @@ export default function RecipeView({ actionData }: Route.ComponentProps) {
         localStorage.setItem(pendingKey, JSON.stringify(arr));
         // eslint-disable-next-line no-alert
         alert(
-          "A recept elmentve helyileg a böngészőben (biztonsági mentés). Jelentkezz be később a feltöltéshez.",
+          "Recipe saved locally in your browser (backup). Sign in later to upload it.",
         );
       } catch (e) {
         // eslint-disable-next-line no-console
         console.error("Failed to save locally", e);
         // eslint-disable-next-line no-alert
         alert(
-          "Hiba történt a mentés során és a helyi mentés sem sikerült. Ellenőrizd a hálózati kapcsolatot.",
+          "An error occurred while saving and local backup also failed. Please check your network connection.",
         );
       }
       throw err;
@@ -107,28 +135,26 @@ export default function RecipeView({ actionData }: Route.ComponentProps) {
     return (
       <div className="max-w-4xl mx-auto p-6">
         <div className="bg-white border border-gray-200 rounded-lg shadow p-8 text-center">
-          <h1 className="text-3xl font-bold mb-4">
-            Nincs megjeleníthető recept
-          </h1>
+          <h1 className="text-3xl font-bold mb-4">No Recipe to Display</h1>
 
           <p className="text-gray-600 mb-6">
-            Úgy tűnik, nem érkezett recept a navigáció állapotában. Először
-            generálj egy receptet a főoldalon.
+            It seems no recipe was passed in the navigation state. Please
+            generate a recipe first from the home page.
           </p>
 
           <div className="flex justify-center gap-4">
             <Link
               to="/"
-              className="px-6 py-3 bg-green-500 text-white rounded-md hover:bg-green-600 cursor-pointer"
+              className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 cursor-pointer"
             >
-              Recept generálása
+              Generate Recipe
             </Link>
 
             <Link
               to="/profile"
-              className="px-6 py-3 bg-blue-500 text-white rounded-md hover:bg-blue-600"
+              className="px-6 py-3 bg-gray-500 text-white rounded-md hover:bg-gray-600"
             >
-              Profil
+              My Profile
             </Link>
           </div>
         </div>
@@ -139,27 +165,77 @@ export default function RecipeView({ actionData }: Route.ComponentProps) {
   return (
     <div className="max-w-5xl mx-auto p-6">
       <div className="bg-white border border-gray-200 rounded-lg shadow p-8">
-        <h1 className="text-4xl font-bold text-gray-800 mb-4">
-          {title ?? "Generált recept"}
-        </h1>
+        {isDualResponse && (
+          <div className="mb-6 border-b pb-6">
+            <h2 className="text-lg font-semibold text-gray-700 mb-4">
+              Select Model
+            </h2>
+            <div className="flex gap-4">
+              <button
+                onClick={() => setActiveTab("scratch")}
+                className={`px-6 py-2 rounded-md font-semibold transition ${
+                  activeTab === "scratch"
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                }`}
+              >
+                Custom Model
+              </button>
+              <button
+                onClick={() => setActiveTab("finetuned")}
+                className={`px-6 py-2 rounded-md font-semibold transition ${
+                  activeTab === "finetuned"
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                }`}
+              >
+                Fine-tuned Model
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex justify-between items-start mb-6">
+          <div>
+            <h1 className="text-4xl font-bold text-gray-800">
+              {title ?? "Generated Recipe"}
+            </h1>
+            {modelName && (
+              <p className="text-gray-500 mt-2 text-sm">
+                Generated by: <span className="font-medium capitalize">{modelName}</span> model
+              </p>
+            )}
+            {cookTime && (
+              <p className="text-gray-500 mt-1 text-sm">
+                Cooking time: <span className="font-medium">{cookTime}</span>
+              </p>
+            )}
+          </div>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div className="md:col-span-1">
-            <h2 className="text-2xl font-semibold text-gray-700 mb-3">
-              Hozzávalók
+            <h2 className="text-2xl font-semibold text-gray-700 mb-4">
+              Ingredients
             </h2>
 
             {ingredients.length === 0 ? (
-              <p className="text-gray-500">Nincsenek hozzávalók.</p>
+              <p className="text-gray-500">No ingredients listed.</p>
             ) : (
-              <ul className="list-disc list-inside space-y-2 text-gray-600">
+              <ul className="space-y-3">
                 {ingredients.map((ing, idx) => (
-                  <li key={idx}>
-                    <span className="font-medium mr-2">
-                      {ing.amount ? ing.amount : "—"}
-                    </span>
-
-                    {ing.name}
+                  <li key={idx} className="flex items-start gap-3">
+                    <span className="text-blue-600 font-bold mt-0.5">•</span>
+                    <div>
+                      <span className="font-medium text-gray-800">
+                        {ing.name}
+                      </span>
+                      {ing.amount && (
+                        <span className="block text-gray-500 text-sm">
+                          {ing.amount}
+                        </span>
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -167,35 +243,40 @@ export default function RecipeView({ actionData }: Route.ComponentProps) {
           </div>
 
           <div className="md:col-span-2">
-            <h2 className="text-2xl font-semibold text-gray-700 mb-3">
-              Elkészítés
+            <h2 className="text-2xl font-semibold text-gray-700 mb-4">
+              Instructions
             </h2>
 
             {steps.length === 0 ? (
-              <p className="text-gray-500">Nincsenek előkészített lépések.</p>
+              <p className="text-gray-500">No instructions provided.</p>
             ) : (
-              <ol className="list-decimal list-inside space-y-3 text-gray-600">
+              <ol className="space-y-4">
                 {steps.map((step, idx) => (
-                  <li key={idx}>{step}</li>
+                  <li key={idx} className="flex gap-4">
+                    <span className="flex-shrink-0 flex items-center justify-center w-8 h-8 bg-blue-600 text-white rounded-full font-semibold">
+                      {idx + 1}
+                    </span>
+                    <span className="text-gray-700 pt-1">{step}</span>
+                  </li>
                 ))}
               </ol>
             )}
           </div>
         </div>
 
-        <div className="mt-8 flex justify-end gap-4">
+        <div className="mt-8 flex justify-between gap-4">
           <button
             onClick={saveRecipe}
-            className="px-6 py-2 rounded bg-green-500 text-white hover:bg-green-600 cursor-pointer"
+            className="px-6 py-3 rounded-md bg-green-600 text-white hover:bg-green-700 font-semibold cursor-pointer transition"
           >
-            Recept mentése
+            Save Recipe
           </button>
 
           <Link
             to="/"
-            className="px-6 py-2 rounded bg-gray-500 text-white hover:bg-gray-600"
+            className="px-6 py-3 rounded-md bg-blue-600 text-white hover:bg-blue-700 font-semibold transition"
           >
-            Új recept generálása
+            Generate New Recipe
           </Link>
         </div>
       </div>

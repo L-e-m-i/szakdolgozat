@@ -81,6 +81,10 @@ Core technologies:
   - **Pydantic** (validation & settings)
   - **SQLAlchemy** (ORM)
   - **Uvicorn** (ASGI server)
+- ML features:
+  - **Hugging Face Spaces** (external inference endpoints)
+  - **gradio_client** (client for recipe generation models)
+  - **Model selection** ([finetuned](https://huggingface.co/spaces/l-e-m-i/finetuned_space), [scratch](https://huggingface.co/spaces/l-e-m-i/scratch_space), or `both`)
 - Database:
   - **PostgreSQL** (official Docker image)
 - Dev & Deployment:

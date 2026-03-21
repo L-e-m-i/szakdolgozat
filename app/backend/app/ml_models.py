@@ -1,0 +1,181 @@
+"""Machine learning model loading and inference via Hugging Face Spaces (Microservices)."""
+
+from __future__ import annotations
+
+import logging
+import re
+import json
+from typing import Any, Optional
+from gradio_client import Client
+
+logger = logging.getLogger(__name__)
+
+# =====================================================================
+# HUGGING FACE SPACES CONFIGURATION
+# =====================================================================
+T5_SPACE_ID = "l-e-m-i/finetuned_space"
+SCRATCH_SPACE_ID = "l-e-m-i/scratch_space"
+
+
+class ModelManager:
+    """Manages API connections to the external AI microservices."""
+
+    def __init__(self):
+        """Initialize the model manager with lazy-loaded API clients."""
+        logger.info("Initializing Hugging Face Spaces API Manager...")
+        self.t5_client = None
+        self.scratch_client = None
+
+    def _get_t5_client(self) -> Client:
+        """Lazy load the T5 Gradio Client."""
+        if self.t5_client is None:
+            logger.info(f"Connecting to T5 Space: {T5_SPACE_ID}")
+            self.t5_client = Client(T5_SPACE_ID)
+        return self.t5_client
+
+    def _get_scratch_client(self) -> Client:
+        """Lazy load the Scratch Gradio Client."""
+        if self.scratch_client is None:
+            logger.info(f"Connecting to Scratch Space: {SCRATCH_SPACE_ID}")
+            self.scratch_client = Client(SCRATCH_SPACE_ID)
+        return self.scratch_client
+
+    def generate_recipe_with_finetuned(self, ingredients: list[str]) -> dict:
+        """Request recipe from the fine-tuned T5 Hugging Face Space."""
+        ingredients_text = ", ".join(ingredients).lower()
+        
+        try:
+            client = self._get_t5_client()
+            
+            # API call to the HF Space
+            result = client.predict(
+                ingredients_text=ingredients_text,
+                api_name="/generate_recipe"
+            )
+            logger.info(f"Received result from T5 Space: {result}")
+            return self._process_api_result(result, ingredients, model_name="finetuned")
+            
+        except Exception as e:
+            logger.error(f"Error calling T5 Space API: {e}")
+            raise RuntimeError("Failed to connect to the T5 AI service.") from e
+
+    def generate_recipe_with_scratch(self, ingredients: list[str]) -> dict:
+        """Request recipe from the custom Scratch Hugging Face Space."""
+        ingredients_text = ", ".join(ingredients).lower()
+        
+        try:
+            client = self._get_scratch_client()
+            
+            # API call to the Scratch HF Space (includes the forced_title param we added)
+            result = client.predict(
+                ingredients_text=ingredients_text,
+                api_name="/generate_scratch_recipe"
+            )
+            return self._process_api_result(result, ingredients, model_name="scratch")
+            
+        except Exception as e:
+            logger.error(f"Error calling Scratch Space API: {e}")
+            raise RuntimeError("Failed to connect to the Scratch AI service.") from e
+
+    def _process_api_result(self, result: Any, original_ingredients: list[str], model_name: str) -> dict:
+        """Parse the result from the HF Spaces into the expected backend dictionary format."""
+        
+        # 1. CHECK: Is it already a dictionary? (Gradio Client auto-parsed it)
+        if isinstance(result, dict):
+            logger.info(f"Result from {model_name} was auto-parsed by the client.")
+            data = result
+        else:
+            # 2. ATTEMPT: Parse as JSON string if it's not a dict yet
+            try:
+                data = json.loads(result)
+            except (json.JSONDecodeError, TypeError):
+                # 3. FALLBACK: If it's pure raw text (Legacy support), use Regex
+                logger.info(f"Result from {model_name} is raw text. Using regex parser.")
+                return self._parse_recipe_regex(result, original_ingredients, model_name)
+            
+        # At this point 'data' is a dictionary. Now we just format it for the frontend:
+        try:
+            # Format steps from string to list if necessary
+            steps_raw = data.get("steps", "")
+            if isinstance(steps_raw, list):
+                steps = steps_raw
+            elif ";" in str(steps_raw):
+                steps = [s.strip(" .") for s in steps_raw.split(";") if s.strip()]
+            else:
+                steps = [str(steps_raw)] if steps_raw else ["Enjoy your meal!"]
+                
+            # Format ingredients list
+            ing_raw = data.get("ingredients", "")
+            if isinstance(ing_raw, list):
+                ing_list = [{"name": str(i)} for i in ing_raw]
+            else:
+                ing_list = [{"name": ing.strip()} for ing in str(ing_raw).split(",") if ing.strip()]
+            
+            if not ing_list:
+                ing_list = [{"name": ing} for ing in original_ingredients]
+
+            return {
+                "title": str(data.get("title", "Generated Recipe")).title(),
+                "time": str(data.get("time", "30 mins")),
+                "ingredients": ing_list,
+                "steps": steps,
+                "model": model_name
+            }
+        except Exception as e:
+            logger.error(f"Error re-formatting dictionary data: {e}")
+            # Final fallback to raw text if formatting the dict fails
+            return {"title": "Error", "ingredients": [], "steps": [str(result)], "time": "", "model": model_name}
+
+    def _parse_recipe_regex(self, text: str, ingredients: list[str], model_name: str) -> dict:
+        """Fallback parser for raw text (Legacy support)."""
+        text = text.strip()
+
+        def _extract(section: str) -> Optional[str]:
+            pattern = rf"{section}:\s*(.*?)(?=\btitle:|\btime:|\bingredients:|\bsteps:|$)"
+            match = re.search(pattern, text, flags=re.IGNORECASE | re.DOTALL)
+            return match.group(1).strip() if match else None
+
+        title = _extract("title") or f"Quick recipe: {', '.join(ingredients)}"
+        time_str = _extract("time") or "30 mins"
+
+        parsed_ingredients: list[str] = []
+        ingredients_raw = _extract("ingredients")
+        if ingredients_raw:
+            normalized = ingredients_raw.replace("\n", ",")
+            parsed_ingredients = [
+                item.strip(" .")
+                for item in normalized.split(",")
+                if item.strip(" .")
+            ]
+
+        steps: list[str] = []
+        steps_raw = _extract("steps")
+        if steps_raw:
+            if ";" in steps_raw:
+                steps = [s.strip(" .") for s in steps_raw.split(";") if s.strip()]
+            else:
+                steps = [line.lstrip("0123456789.-) •").strip() for line in steps_raw.splitlines() if line.strip()]
+
+        if not steps:
+            steps = ["Prepare all ingredients.", f"Mix together: {', '.join(ingredients)}.", "Serve warm."]
+
+        ingredient_source = parsed_ingredients or ingredients
+        ingredient_list = [{"name": ing} for ing in ingredient_source]
+
+        return {
+            "title": title.title(),
+            "ingredients": ingredient_list,
+            "steps": steps,
+            "time": time_str,
+            "model": model_name,
+        }
+
+# Global model manager instance (singleton pattern)
+_model_manager: Optional[ModelManager] = None
+
+def get_model_manager() -> ModelManager:
+    """Get or create the global API manager instance."""
+    global _model_manager
+    if _model_manager is None:
+        _model_manager = ModelManager()
+    return _model_manager

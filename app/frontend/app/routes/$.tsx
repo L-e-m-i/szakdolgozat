@@ -8,16 +8,16 @@ export default function CatchAll() {
         404
       </h1>
       <p className="text-2xl md:text-3xl font-semibold text-gray-600 mt-2">
-        Hoppá, ez a lap nem található.
+        Oops, this page could not be found.
       </p>
       <p className="text-gray-500 mt-4 max-w-sm">
-        A keresett oldal nem található. Lehet, hogy átnevezték vagy törölték.
+        The page you are looking for does not exist. It may have been renamed or deleted.
       </p>
       <Link
         to="/"
         className="mt-8 px-6 py-3 text-white bg-blue-600 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
       >
-        Vissza a kezdőlapra
+        Back to Home
       </Link>
     </div>
   );
