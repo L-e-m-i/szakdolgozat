@@ -11,4 +11,5 @@ app/backend/.coverage
 beadando.txt
 app/.env
 app/backend/.env
-
+app/backend/app/__pycache__/
+app/backend/app/__pycache__/
