@@ -89,7 +89,7 @@ export default function Header() {
               className="text-gray-600 hover:text-blue-600 transition-colors"
             >
               Generate Recipes
-            </Link>
+            </Link> 
           </li>
           {user ? (
             <>

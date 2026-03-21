@@ -38,7 +38,7 @@ export default function ProfileLayout({
     initialView,
   );
 
-  return (
+  return ( 
     <div className="max-w-7xl mx-auto p-4 sm:p-6 md:p-8">
       <div className="flex flex-col md:flex-row gap-8">
         {/* Sidebar */}
