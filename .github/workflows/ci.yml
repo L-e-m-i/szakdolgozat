@@ -56,6 +56,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/app/backend
           DATABASE_URL: postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/test_db
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
         run: |
           mkdir -p reports
           pytest tests --junitxml=reports/junit.xml --cov=app --cov-report=xml:reports/coverage.xml
