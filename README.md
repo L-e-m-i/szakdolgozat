@@ -124,6 +124,18 @@ POSTGRES_USER=user
 POSTGRES_PASSWORD=pass
 POSTGRES_DB=db
 VITE_API_BASE_URL=http://backend:8000
+SECRET_KEY=replace_with_a_long_random_secret
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+SQLALCHEMY_ECHO=0
+HOST=0.0.0.0
+PORT=8000
+```
+
+Create `app/frontend/.env` (or copy from `.env.example`) and set the frontend API base URL:
+
+```
+VITE_API_BASE_URL=http://localhost:8000
+VITE_PORT=5173
 ```
 
 ---
