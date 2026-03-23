@@ -34,10 +34,13 @@ def _normalize_steps(steps: List[str]) -> List[str]:
     """Normalize steps to a non-empty list without injecting extra ingredients."""
     clean_steps = [s.strip() for s in steps if isinstance(s, str) and s.strip()]
     if not clean_steps:
-        return [
+        clean_steps = [
             "prepare ingredients",
             "cook until done",
         ]
+
+    if len(clean_steps) < 3:
+        clean_steps.append("serve and enjoy")
 
     return clean_steps
 
@@ -66,7 +69,7 @@ def generate_recipe_from_ingredients(
 
     Args:
         raw_ingredients: List of ingredient names
-        model_choice: Which model to use ('scratch', 'finetuned', or 'both')
+        model_choice: Which model to use ('scratch', 'finetuned', 'gemini', or 'both')
 
     Returns:
         Recipe or DualRecipeResponse (if model_choice is 'both')
@@ -145,6 +148,13 @@ def generate_recipe_from_ingredients(
             except Exception as e:
                 logger.warning(f"Fine-tuned model generation failed: {e}")
                 return _create_fallback_recipe(ingredients, "finetuned")
+
+        elif model_choice == "gemini":
+            try:
+                data = manager.generate_recipe_with_gemini(ingredients)
+            except Exception as e:
+                logger.warning(f"Gemini model generation failed: {e}")
+                return _create_fallback_recipe(ingredients, "gemini")
 
         else:
             raise ValueError(f"Unknown model choice: {model_choice}")

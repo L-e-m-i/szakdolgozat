@@ -18,7 +18,7 @@ import type { components } from "../types";
 type ApiIngredient = components["schemas"]["RecipeIngredient"];
 type ApiRecipe = components["schemas"]["Recipe"];
 
-type ModelChoice = "scratch" | "finetuned" | "both";
+type ModelChoice = "scratch" | "finetuned" | "gemini" | "both";
 
 export default function Index() {
   const [inputText, setInputText] = useState("");
@@ -171,6 +171,28 @@ export default function Index() {
                 <span className="font-medium">Fine-tuned Model (Recommended)</span>
                 <p className="text-sm text-gray-500">
                   Pre-trained T5 model, optimized for recipes
+                </p>
+              </label>
+            </div>
+
+            <div className="flex items-center">
+              <input
+                type="radio"
+                id="model-gemini"
+                name="model"
+                value="gemini"
+                checked={modelChoice === "gemini"}
+                onChange={(e) => setModelChoice(e.target.value as ModelChoice)}
+                disabled={isLoading}
+                className="w-4 h-4 text-blue-600 cursor-pointer"
+              />
+              <label
+                htmlFor="model-gemini"
+                className="ml-3 cursor-pointer text-gray-700"
+              >
+                <span className="font-medium">Gemini Model</span>
+                <p className="text-sm text-gray-500">
+                  Google Gemini for fast, general-purpose recipe generation
                 </p>
               </label>
             </div>

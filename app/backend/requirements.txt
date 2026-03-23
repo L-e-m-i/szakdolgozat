@@ -10,5 +10,5 @@ pyjwt
 pwdlib[argon2]
 python-multipart
 pydantic[email]
-
 gradio_client
+google-generativeai

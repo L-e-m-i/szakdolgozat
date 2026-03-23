@@ -324,7 +324,7 @@ async def generate_recipe(request: RecipeRequest) -> Recipe | DualRecipeResponse
     Args:
         request: RecipeRequest with ingredients and optional model choice
                 - ingredients: list of ingredient names
-                - model: 'scratch', 'finetuned', or 'both' (default: 'finetuned')
+                - model: 'scratch', 'finetuned', 'gemini', or 'both' (default: 'finetuned')
 
     Returns:
         Recipe or DualRecipeResponse (if model='both')

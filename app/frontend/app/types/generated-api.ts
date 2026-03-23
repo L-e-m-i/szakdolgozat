@@ -337,7 +337,7 @@ export interface components {
          * @description Which AI model to use for recipe generation.
          * @enum {string}
          */
-        ModelChoice: "scratch" | "finetuned" | "both";
+        ModelChoice: "scratch" | "finetuned" | "gemini" | "both";
         /**
          * Recipe
          * @description Structure of a generated recipe.
@@ -400,7 +400,7 @@ export interface components {
              */
             ingredients: string[];
             /**
-             * @description Which model to use: 'scratch' (RecipeTransformerV4), 'finetuned' (Flan-T5), or 'both' (returns two recipes).
+             * @description Which model to use: 'scratch' (RecipeTransformerV4), 'finetuned' (Flan-T5), 'gemini' (Google Gemini), or 'both' (returns scratch + finetuned recipes).
              * @default finetuned
              */
             model: components["schemas"]["ModelChoice"];

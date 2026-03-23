@@ -84,7 +84,7 @@ Core technologies:
 - ML features:
   - **Hugging Face Spaces** (external inference endpoints)
   - **gradio_client** (client for recipe generation models)
-  - **Model selection** ([finetuned](https://huggingface.co/spaces/l-e-m-i/finetuned_space), [scratch](https://huggingface.co/spaces/l-e-m-i/scratch_space), or `both`)
+  - **Model selection** ([finetuned](https://huggingface.co/spaces/l-e-m-i/finetuned_space), [scratch](https://huggingface.co/spaces/l-e-m-i/scratch_space), `gemini`, or `both`)
 - Database:
   - **PostgreSQL** (official Docker image)
 - Dev & Deployment:
@@ -124,6 +124,8 @@ POSTGRES_USER=user
 POSTGRES_PASSWORD=pass
 POSTGRES_DB=db
 VITE_API_BASE_URL=http://backend:8000
+GEMINI_API_KEY=replace_with_your_gemini_api_key
+GEMINI_MODEL=gemini-2.5-flash
 SECRET_KEY=replace_with_a_long_random_secret
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 SQLALCHEMY_ECHO=0

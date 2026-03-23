@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import logging
 import re
 import json
+import importlib
 from typing import Any, Optional
 from gradio_client import Client
 
@@ -15,6 +17,7 @@ logger = logging.getLogger(__name__)
 # =====================================================================
 T5_SPACE_ID = "l-e-m-i/finetuned_space"
 SCRATCH_SPACE_ID = "l-e-m-i/scratch_space"
+DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
 
 
 class ModelManager:
@@ -25,6 +28,8 @@ class ModelManager:
         logger.info("Initializing Hugging Face Spaces API Manager...")
         self.t5_client = None
         self.scratch_client = None
+        self.gemini_model = None
+        self.gemini_model_name = ""
 
     def _get_t5_client(self) -> Client:
         """Lazy load the T5 Gradio Client."""
@@ -77,6 +82,80 @@ class ModelManager:
             logger.error(f"Error calling Scratch Space API: {e}")
             raise RuntimeError("Failed to connect to the Scratch AI service.") from e
 
+    def _extract_json_object_from_text(self, text: str) -> Optional[dict[str, Any]]:
+        """Extract a JSON object from model output text (with or without code fences)."""
+        if not isinstance(text, str):
+            return None
+
+        cleaned = text.strip()
+        if cleaned.startswith("```"):
+            cleaned = re.sub(r"^```(?:json)?\\s*", "", cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(r"\\s*```$", "", cleaned)
+
+        try:
+            parsed = json.loads(cleaned)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+        match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+        if not match:
+            return None
+
+        try:
+            parsed = json.loads(match.group(0))
+            return parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            return None
+
+    def generate_recipe_with_gemini(self, ingredients: list[str]) -> dict:
+        """Request recipe from Gemini and normalize output to backend format."""
+        api_key = os.getenv("GEMINI_API_KEY", "").strip()
+        if not api_key:
+            raise RuntimeError("GEMINI_API_KEY is not configured.")
+
+        try:
+            genai = importlib.import_module("google.generativeai")
+        except ImportError as e:
+            raise RuntimeError("Gemini SDK is not installed.") from e
+
+        model_name = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
+        ingredients_text = ", ".join(ingredients).lower()
+
+        prompt = (
+            "Generate one practical recipe from these ingredients: "
+            f"{ingredients_text}. "
+            "Return valid JSON only with keys: title (string), time (string), "
+            "ingredients (array of objects with name and optional amount), "
+            "steps (array of strings). Do not include markdown or extra text."
+            "aim for concise, clear instructions suitable for a home cook."
+            "It's not neccesary to use all ingredients, you can add other items, but try to include as many of the provided ones as possible."
+            "Add common items if it helps make a more complete recipe (e.g. water, oil, salt, pepper)."
+        )
+
+        try:
+            genai.configure(api_key=api_key)
+
+            if self.gemini_model is None or self.gemini_model_name != model_name:
+                self.gemini_model = genai.GenerativeModel(model_name)
+                self.gemini_model_name = model_name
+
+            response = self.gemini_model.generate_content(prompt)
+            raw_text = str(getattr(response, "text", "") or "").strip()
+
+            if not raw_text:
+                raise RuntimeError("Gemini returned an empty response.")
+
+            parsed = self._extract_json_object_from_text(raw_text)
+            if parsed is not None:
+                return self._process_api_result(parsed, ingredients, model_name="gemini")
+
+            return self._process_api_result(raw_text, ingredients, model_name="gemini")
+        except Exception as e:
+            logger.error(f"Error calling Gemini API: {e}")
+            raise RuntimeError("Failed to connect to the Gemini AI service.") from e
+
     def _process_api_result(self, result: Any, original_ingredients: list[str], model_name: str) -> dict:
         """Parse the result from the HF Spaces into the expected backend dictionary format."""
         
@@ -107,7 +186,21 @@ class ModelManager:
             # Format ingredients list
             ing_raw = data.get("ingredients", "")
             if isinstance(ing_raw, list):
-                ing_list = [{"name": str(i)} for i in ing_raw]
+                ing_list = []
+                for item in ing_raw:
+                    if isinstance(item, dict):
+                        name = str(item.get("name", "")).strip()
+                        if not name:
+                            continue
+                        amount = item.get("amount")
+                        ingredient = {"name": name}
+                        if amount is not None and str(amount).strip():
+                            ingredient["amount"] = str(amount).strip()
+                        ing_list.append(ingredient)
+                    else:
+                        item_name = str(item).strip()
+                        if item_name:
+                            ing_list.append({"name": item_name})
             else:
                 ing_list = [{"name": ing.strip()} for ing in str(ing_raw).split(",") if ing.strip()]
             

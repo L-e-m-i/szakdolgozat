@@ -133,3 +133,16 @@ def test_generate_recipe_with_long_names_handles_length_gracefully() -> None:
     assert recipe.ingredients is not None
     assert len(recipe.ingredients) > 0
     assert len(recipe.steps) >= 3
+
+
+def test_generate_recipe_with_gemini_falls_back_when_unavailable(monkeypatch) -> None:
+    class FailingGeminiManager:
+        def generate_recipe_with_gemini(self, ingredients):
+            raise RuntimeError("Gemini is unavailable")
+
+    monkeypatch.setattr("app.services.get_model_manager", lambda: FailingGeminiManager())
+
+    recipe = generate_recipe_from_ingredients(["tomato", "garlic"], model_choice="gemini")
+    assert recipe.model == "gemini"
+    assert recipe.title
+    assert len(recipe.steps) >= 3

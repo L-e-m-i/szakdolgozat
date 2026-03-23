@@ -16,6 +16,7 @@ class ModelChoice(str, Enum):
 
     scratch = "scratch"
     finetuned = "finetuned"
+    gemini = "gemini"
     both = "both"
 
 
@@ -73,7 +74,8 @@ class RecipeRequest(BaseModel):
         ModelChoice.finetuned,
         description=(
             "Which model to use: 'scratch' (RecipeTransformerV4), "
-            "'finetuned' (Flan-T5), or 'both' (returns two recipes)."
+            "'finetuned' (Flan-T5), 'gemini' (Google Gemini), or "
+            "'both' (returns scratch + finetuned recipes)."
         ),
     )
 
