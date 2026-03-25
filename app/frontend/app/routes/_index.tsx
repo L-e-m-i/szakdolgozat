@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router";
+import api, { formatApiError } from "../services/api";
 
 import type { Route } from "./+types/_index";
 
@@ -12,11 +13,6 @@ export function meta({}: Route.MetaArgs) {
     },
   ];
 }
-
-import type { components } from "../types";
-
-type ApiIngredient = components["schemas"]["RecipeIngredient"];
-type ApiRecipe = components["schemas"]["Recipe"];
 
 type ModelChoice = "scratch" | "finetuned" | "gemini";
 
@@ -80,31 +76,14 @@ export default function Index() {
     setIsLoading(true);
 
     try {
-      const resp = await fetch("http://127.0.0.1:8000/recipes/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ingredients: tags, models: selectedModels }),
-      });
-
-      if (!resp.ok) {
-        // Try to read error message from backend
-        const err = await resp.json().catch(() => null);
-        const msg = err?.message ?? err?.detail ?? `Server error: ${resp.status}`;
-        alert(msg);
-        setIsLoading(false);
-        return;
-      }
-
-      const data = await resp.json();
-      setIsLoading(false);
+      const data = await api.generateRecipe(tags, selectedModels);
 
       // Navigate to recipe view and pass recipe(s) via state
       navigate("/recipe", { state: { recipe: data } });
-    } catch (e) {
-      console.error(e);
-      alert(
-        "Network error. Make sure the backend is running (http://127.0.0.1:8000) and there are no firewall or CORS issues.",
-      );
+    } catch (err) {
+      const normalized = formatApiError(err);
+      alert(normalized.message || "Failed to generate recipe.");
+    } finally {
       setIsLoading(false);
     }
   };
@@ -234,7 +213,7 @@ export default function Index() {
               >
                 <span className="font-medium">Custom Model</span>
                 <p className="text-sm text-gray-500">
-                  Custom TransformerV3 model
+                  Custom TransformerV4 model
                 </p>
               </label>
             </div>

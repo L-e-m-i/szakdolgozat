@@ -56,11 +56,6 @@ const getBaseUrl = (): string => {
 const API_BASE = getBaseUrl().replace(/\/+$/, "");
 const PENDING_SAVES_KEY = "recipegen_pending_saves";
 
-type AuthTokens = {
-  accessToken?: string;
-  expiresAt?: number;
-};
-
 async function handleResponse<T>(res: Response): Promise<T> {
   if (res.status === 204) {
     return {} as T;
@@ -186,12 +181,12 @@ export async function signup(
 export async function login(
   username: string,
   password: string,
-): Promise<AuthTokens> {
+): Promise<void> {
   const form = new URLSearchParams();
   form.set("username", username);
   form.set("password", password);
 
-  const data = await request<{
+  await request<{
     access_token?: string;
     expires_in?: number;
   }>("/auth/token", {
@@ -214,10 +209,6 @@ export async function login(
     // ignore
   });
 
-  return {
-    accessToken: data.access_token,
-    expiresAt: data.expires_in ? Date.now() + data.expires_in * 1000 : undefined,
-  };
 }
 
 export async function logout(): Promise<void> {
@@ -240,8 +231,8 @@ export async function logout(): Promise<void> {
   }
 }
 
-export async function refreshAccessToken(): Promise<AuthTokens> {
-  const data = await request<{
+export async function refreshAccessToken(): Promise<void> {
+  await request<{
     access_token?: string;
     expires_in?: number;
   }>("/auth/refresh", {
@@ -250,10 +241,6 @@ export async function refreshAccessToken(): Promise<AuthTokens> {
     body: JSON.stringify({}),
   });
 
-  return {
-    accessToken: data.access_token,
-    expiresAt: data.expires_in ? Date.now() + data.expires_in * 1000 : undefined,
-  };
 }
 
 function savePendingRecipeLocally(recipe: Recipe) {

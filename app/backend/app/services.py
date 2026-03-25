@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import logging
 from typing import List
 
@@ -87,60 +88,53 @@ def generate_recipe_from_ingredients(
         raise ValueError("Duplicate models are not allowed.")
 
     manager = get_model_manager()
-    recipes: list[Recipe] = []
+
+    def _generate_for_model(model_choice: str) -> Recipe:
+        if model_choice == "scratch":
+            try:
+                data = manager.generate_recipe_with_scratch(ingredients)
+            except Exception as e:
+                logger.warning(f"Scratch model generation failed: {e}")
+                return _create_fallback_recipe(ingredients, "scratch")
+        elif model_choice == "finetuned":
+            try:
+                data = manager.generate_recipe_with_finetuned(ingredients)
+            except Exception as e:
+                logger.warning(f"Fine-tuned model generation failed: {e}")
+                return _create_fallback_recipe(ingredients, "finetuned")
+        elif model_choice == "gemini":
+            try:
+                data = manager.generate_recipe_with_gemini(ingredients)
+            except Exception as e:
+                logger.warning(f"Gemini model generation failed: {e}")
+                return _create_fallback_recipe(ingredients, "gemini")
+        else:
+            raise ValueError(f"Unknown model choice: {model_choice}")
+
+        model_steps = _normalize_steps(
+            data.get("steps") if isinstance(data.get("steps"), list) else [str(data.get("steps", ""))],
+        )
+        model_ingredient_names = _extract_ingredient_names(
+            data.get("ingredients"),
+            ingredients,
+        )
+
+        return Recipe(
+            title=str(data.get("title", "Generated Recipe")),
+            time=data.get("time"),
+            ingredients=[
+                RecipeIngredient(name=ing_name)
+                for ing_name in model_ingredient_names
+            ],
+            steps=model_steps,
+            model=str(data.get("model") or model_choice),
+        )
 
     try:
-        for model_choice in selected_models:
-            if model_choice == "scratch":
-                try:
-                    data = manager.generate_recipe_with_scratch(ingredients)
-                except Exception as e:
-                    logger.warning(f"Scratch model generation failed: {e}")
-                    recipes.append(_create_fallback_recipe(ingredients, "scratch"))
-                    continue
-
-            elif model_choice == "finetuned":
-                try:
-                    data = manager.generate_recipe_with_finetuned(ingredients)
-                except Exception as e:
-                    logger.warning(f"Fine-tuned model generation failed: {e}")
-                    recipes.append(_create_fallback_recipe(ingredients, "finetuned"))
-                    continue
-
-            elif model_choice == "gemini":
-                try:
-                    data = manager.generate_recipe_with_gemini(ingredients)
-                except Exception as e:
-                    logger.warning(f"Gemini model generation failed: {e}")
-                    recipes.append(_create_fallback_recipe(ingredients, "gemini"))
-                    continue
-
-            else:
-                raise ValueError(f"Unknown model choice: {model_choice}")
-
-            model_steps = _normalize_steps(
-                data.get("steps") if isinstance(data.get("steps"), list) else [str(data.get("steps", ""))],
-            )
-            model_ingredient_names = _extract_ingredient_names(
-                data.get("ingredients"),
-                ingredients,
-            )
-
-            recipes.append(
-                Recipe(
-                    title=str(data.get("title", "Generated Recipe")),
-                    time=data.get("time"),
-                    ingredients=[
-                        RecipeIngredient(name=ing_name)
-                        for ing_name in model_ingredient_names
-                    ],
-                    steps=model_steps,
-                    model=str(data.get("model") or model_choice),
-                )
-            )
-
+        with ThreadPoolExecutor(max_workers=min(len(selected_models), 3)) as executor:
+            # executor.map preserves input order, so recipe list order remains stable.
+            recipes = list(executor.map(_generate_for_model, selected_models))
         return recipes
-
     except Exception as e:
         logger.error(f"Recipe generation error: {e}")
         raise

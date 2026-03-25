@@ -10,7 +10,7 @@ from typing import Any, AsyncIterator, Dict
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -500,10 +500,11 @@ async def get_saved_recipe_endpoint(
     # Validate and return a Pydantic `Recipe` instance so FastAPI returns
     # a properly typed response (and any validation issues surface here).
     try:
-        # Use model_validate if available (pydantic v2); fall back to constructing Recipe if rd is None
-        recipe_obj = Recipe.model_validate(rd) if rd is not None else Recipe(**rd)
+        if rd is None:
+            raise ValueError("Saved recipe payload is null")
+        recipe_obj = Recipe.model_validate(rd)
         return recipe_obj
-    except ValidationError as ve:
+    except (ValidationError, TypeError, ValueError) as ve:
         logger.exception("Saved recipe failed validation: %s", ve)
         # Return a 500 with structured detail so clients receive consistent shape
         raise HTTPException(
@@ -557,4 +558,4 @@ async def delete_saved_recipe_endpoint(
     db.delete(saved)
     db.commit()
 
-    return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content={})
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

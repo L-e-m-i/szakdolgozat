@@ -5,9 +5,9 @@ import api from "../services/api";
 /**
  * Header component
  *
- * - Detects basic auth state using localStorage key used by the API module.
+ * - Uses cookie-backed auth state from backend /auth/users/me.
  * - Handles logout by calling the API logout helper and clearing local state.
- * - Listens for cross-tab storage events to keep UI in sync.
+ * - Listens for auth-changed events to keep UI in sync.
  */
 
 export default function Header() {
@@ -27,18 +27,7 @@ export default function Header() {
       // API returns null or user object; normalize to our shape
       setUser(u ? { username: u.username, email: u.email } : null);
     } catch {
-      // If the authenticated endpoint fails (401 or network), try a token-based fallback.
-      try {
-        const raw = localStorage.getItem("recipegen_auth");
-        if (raw) {
-          // We don't have username from token in this implementation; show a generic logged-in state.
-          setUser({ username: undefined });
-        } else {
-          setUser(null);
-        }
-      } catch {
-        setUser(null);
-      }
+      setUser(null);
     } finally {
       setLoadingUser(false);
     }
@@ -46,19 +35,12 @@ export default function Header() {
 
   useEffect(() => {
     loadCurrentUser();
-    // Keep header in sync across tabs (when tokens are added/removed) and listen for custom auth events.
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === "recipegen_auth") {
-        loadCurrentUser();
-      }
-    };
+    // Keep header in sync with login/logout/refresh actions.
     const onAuthChanged: EventListener = () => {
       loadCurrentUser();
     };
-    window.addEventListener("storage", onStorage);
     window.addEventListener("auth-changed", onAuthChanged);
     return () => {
-      window.removeEventListener("storage", onStorage);
       window.removeEventListener("auth-changed", onAuthChanged);
     };
   }, []);
@@ -70,7 +52,6 @@ export default function Header() {
     } catch (err) {
       console.error("Logout failed", err);
     } finally {
-      localStorage.removeItem("recipegen_auth");
       setUser(null);
       navigate("/", { replace: true });
     }

@@ -31,15 +31,14 @@ export default function SignUp() {
     (async () => {
       try {
         const user = await api.getCurrentUser();
-        console.log("user", user);
         if (user) {
-         navigate("/profile")
+          navigate(fromPath, { replace: true });
         }
       } catch {
-        
+        // ignore
       }
     })();
-  }, []);
+  }, [fromPath, navigate]);
   // Form fields
   const [username, setUsername] = useState("");
   const [fullName, setFullName] = useState("");
@@ -52,20 +51,6 @@ export default function SignUp() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-
-  // If user already has tokens, redirect away from signup (prevent access)
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("recipegen_auth");
-      if (raw) {
-        // already logged in -> redirect to previous location or profile
-        navigate(fromPath, { replace: true });
-      }
-    } catch {
-      // ignore localStorage errors
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Username validation: alphanumeric + underscores, 3-30 chars
   const isUsernameValid = (u: string) => /^[A-Za-z0-9_]{3,30}$/.test(u);

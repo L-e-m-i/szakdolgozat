@@ -38,7 +38,7 @@ export interface paths {
         /**
          * Refresh Access Token
          * @description Exchange a valid refresh token for a new access token (and rotate the refresh token).
-         *     Payload expected: { "refresh_token": "<token>" }
+         *     Reads refresh token from payload or HttpOnly cookie.
          */
         post: operations["refresh_access_token_auth_refresh_post"];
         delete?: never;
@@ -204,12 +204,12 @@ export interface paths {
          * @description Generate a recipe from ingredients using AI models.
          *
          *     Args:
-         *         request: RecipeRequest with ingredients and optional model choice
+         *         request: RecipeRequest with ingredients and selected models
          *                 - ingredients: list of ingredient names
-         *                 - model: 'scratch', 'finetuned', or 'both' (default: 'finetuned')
+         *                 - models: list with 1-3 entries from 'scratch', 'finetuned', 'gemini'
          *
          *     Returns:
-         *         Recipe or DualRecipeResponse (if model='both')
+         *         List of recipes, one per selected model
          */
         post: operations["generate_recipe_recipes_generate_post"];
         delete?: never;
@@ -312,14 +312,6 @@ export interface components {
             client_secret?: string | null;
         };
         /**
-         * DualRecipeResponse
-         * @description Response when model='both': contains one recipe from each model.
-         */
-        DualRecipeResponse: {
-            scratch: components["schemas"]["Recipe"];
-            finetuned: components["schemas"]["Recipe"];
-        };
-        /**
          * ErrorResponse
          * @description Error message for API responses (US-04).
          */
@@ -337,7 +329,7 @@ export interface components {
          * @description Which AI model to use for recipe generation.
          * @enum {string}
          */
-        ModelChoice: "scratch" | "finetuned" | "gemini" | "both";
+        ModelChoice: "scratch" | "finetuned" | "gemini";
         /**
          * Recipe
          * @description Structure of a generated recipe.
@@ -400,10 +392,10 @@ export interface components {
              */
             ingredients: string[];
             /**
-             * @description Which model to use: 'scratch' (RecipeTransformerV4), 'finetuned' (Flan-T5), 'gemini' (Google Gemini), or 'both' (returns scratch + finetuned recipes).
-             * @default finetuned
+             * Models
+             * @description Which models to use (1-3): 'scratch' (RecipeTransformerV4), 'finetuned' (Flan-T5), and/or 'gemini' (Google Gemini).
              */
-            model: components["schemas"]["ModelChoice"];
+            models?: components["schemas"]["ModelChoice"][];
         };
         /** Token */
         Token: {
@@ -503,11 +495,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
                 "application/json": {
                     [key: string]: unknown;
-                };
+                } | null;
             };
         };
         responses: {
@@ -538,11 +530,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
                 "application/json": {
                     [key: string]: unknown;
-                };
+                } | null;
             };
         };
         responses: {
@@ -720,7 +712,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Recipe"] | components["schemas"]["DualRecipeResponse"];
+                    "application/json": components["schemas"]["Recipe"][];
                 };
             };
             /** @description Bad Request */
@@ -745,9 +737,7 @@ export interface operations {
     };
     get_saved_recipes_endpoint_user_saved_recipes_get: {
         parameters: {
-            query?: {
-                username?: string;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
@@ -763,22 +753,11 @@ export interface operations {
                     "application/json": components["schemas"]["Recipe"][];
                 };
             };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
         };
     };
     save_recipe_endpoint_user_saved_recipes_post: {
         parameters: {
-            query?: {
-                username?: string;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
@@ -811,9 +790,7 @@ export interface operations {
     };
     get_saved_recipe_endpoint_user_saved_recipes__saved_id__get: {
         parameters: {
-            query?: {
-                username?: string;
-            };
+            query?: never;
             header?: never;
             path: {
                 saved_id: string;
@@ -844,9 +821,7 @@ export interface operations {
     };
     delete_saved_recipe_endpoint_user_saved_recipes__saved_id__delete: {
         parameters: {
-            query?: {
-                username?: string;
-            };
+            query?: never;
             header?: never;
             path: {
                 saved_id: string;

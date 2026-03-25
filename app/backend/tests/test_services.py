@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import threading
+import time
 import uuid
 
+from app.db.models import SavedRecipe as DBSavedRecipe
+from app.db.models import User as DBUser
+from app.db.session import SessionLocal
 from app.main import app
 from app.services import (
     _normalize_ingredients,
@@ -21,7 +26,7 @@ def _unique_email() -> str:
     return f"{uuid.uuid4().hex[:8]}@example.com"
 
 
-def _auth_headers() -> dict[str, str]:
+def _auth_context() -> tuple[dict[str, str], str]:
     username = _unique_username()
     email = _unique_email()
     password = "service-test-pass-123"
@@ -39,7 +44,12 @@ def _auth_headers() -> dict[str, str]:
     )
     assert login.status_code == 200, login.text
     token = login.json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
+    return {"Authorization": f"Bearer {token}"}, username
+
+
+def _auth_headers() -> dict[str, str]:
+    headers, _ = _auth_context()
+    return headers
 
 
 def test_get_empty_recipes_returns_empty_list() -> None:
@@ -154,3 +164,97 @@ def test_generate_recipe_with_gemini_falls_back_when_unavailable(monkeypatch) ->
     assert recipe.model == "gemini"
     assert recipe.title
     assert len(recipe.steps) >= 3
+
+
+def test_delete_saved_recipe_returns_204_with_empty_body() -> None:
+    headers = _auth_headers()
+
+    save_resp = client.post(
+        "/user/saved-recipes",
+        headers=headers,
+        json={
+            "title": "Delete me",
+            "ingredients": [{"name": "tomato"}],
+            "steps": ["slice", "serve"],
+        },
+    )
+    assert save_resp.status_code == 201, save_resp.text
+    saved_id = save_resp.json()["id"]
+
+    delete_resp = client.delete(f"/user/saved-recipes/{saved_id}", headers=headers)
+    assert delete_resp.status_code == 204
+    assert delete_resp.text == ""
+
+
+def test_get_saved_recipe_returns_structured_error_for_invalid_saved_data() -> None:
+    headers, username = _auth_context()
+
+    db = SessionLocal()
+    try:
+        db_user = db.query(DBUser).filter(DBUser.username == username).first()
+        assert db_user is not None
+
+        invalid_saved = DBSavedRecipe(
+            user_id=db_user.id,
+            title="Corrupted recipe",
+            # Missing required Recipe fields -> should trigger backend validation failure.
+            recipe_data={"unexpected": "shape"},
+        )
+        db.add(invalid_saved)
+        db.commit()
+        db.refresh(invalid_saved)
+        saved_id = invalid_saved.id
+    finally:
+        db.close()
+
+    resp = client.get(f"/user/saved-recipes/{saved_id}", headers=headers)
+    assert resp.status_code == 500
+    body = resp.json()
+    assert body.get("code") == "invalid_saved_data"
+    assert "Saved recipe data is invalid" in body.get("message", "")
+
+
+def test_generate_recipe_runs_models_in_parallel_and_keeps_order(monkeypatch) -> None:
+    class ParallelAwareManager:
+        def __init__(self):
+            self._lock = threading.Lock()
+            self.active = 0
+            self.max_active = 0
+
+        def _run(self, model: str):
+            with self._lock:
+                self.active += 1
+                if self.active > self.max_active:
+                    self.max_active = self.active
+            try:
+                time.sleep(0.05)
+                return {
+                    "title": f"{model} recipe",
+                    "ingredients": [{"name": "tomato"}],
+                    "steps": ["prep", "cook", "serve"],
+                    "time": "10 mins",
+                    "model": model,
+                }
+            finally:
+                with self._lock:
+                    self.active -= 1
+
+        def generate_recipe_with_scratch(self, ingredients):
+            return self._run("scratch")
+
+        def generate_recipe_with_finetuned(self, ingredients):
+            return self._run("finetuned")
+
+        def generate_recipe_with_gemini(self, ingredients):
+            return self._run("gemini")
+
+    manager = ParallelAwareManager()
+    monkeypatch.setattr("app.services.get_model_manager", lambda: manager)
+
+    recipes = generate_recipe_from_ingredients(
+        ["tomato", "garlic"],
+        model_choices=["scratch", "finetuned", "gemini"],
+    )
+
+    assert [recipe.model for recipe in recipes] == ["scratch", "finetuned", "gemini"]
+    assert manager.max_active >= 2

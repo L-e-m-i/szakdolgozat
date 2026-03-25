@@ -150,7 +150,7 @@ The backend supports Gemini as a recipe generation model through the existing `/
 Requirements:
 - `GEMINI_API_KEY` must be set in `app/.env`.
 - `GEMINI_MODEL` is optional. Default: `gemini-2.5-flash`.
-- Backend dependency is already included: `google-generativeai`.
+- Backend dependency is already included: `google-genai`.
 
 How to request Gemini output:
 - Send `models` in the request body with 1-3 values from `scratch`, `finetuned`, `gemini`.

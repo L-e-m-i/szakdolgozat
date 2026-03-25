@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import type { Route } from "./+types/login";
 import { Link, useNavigate, useLocation } from "react-router";
-import api, { ApiError, formatApiError } from "../services/api";
+import api, { formatApiError } from "../services/api";
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -27,13 +27,14 @@ export default function Login() {
     (async () => {
       try {
         const user = await api.getCurrentUser();
-        console.log("user", user);
         if (user) {
-          navigate("/profile");
+          navigate(fromPath, { replace: true });
         }
-      } catch {}
+      } catch {
+        // ignore
+      }
     })();
-  }, []);
+  }, [fromPath, navigate]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -41,19 +42,6 @@ export default function Login() {
   const [error, setError] = useState<ApiErrorShape>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-
-  // If already logged in (tokens present), redirect away from login page.
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("recipegen_auth");
-      if (raw) {
-        navigate(fromPath, { replace: true });
-      }
-    } catch {
-      // ignore localStorage errors
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   function isEmailValid(e: string) {
     // simple email check
@@ -81,18 +69,7 @@ export default function Login() {
     setLoading(true);
 
     try {
-      // Call backend login - the API wrapper stores tokens in localStorage
-      const tokens = await api.login(email, password);
-      console.log("LOGIN TOKENS:", tokens);
-
-      // Attempt to fetch the current user for debugging / immediate UI needs.
-      // Failure here should not block the login flow (treat as non-fatal).
-      try {
-        const me = await api.getCurrentUser();
-        console.log("/auth/users/me/ response:", me);
-      } catch (meErr) {
-        console.warn("/auth/users/me/ error (non-fatal):", meErr);
-      }
+      await api.login(email, password);
 
       // After successful login, flush any pending local saves (best-effort)
       try {
@@ -108,9 +85,7 @@ export default function Login() {
         navigate(fromPath, { replace: true });
       }, 600);
     } catch (err: any) {
-      console.log(err);
       const normalized = formatApiError(err);
-      console.log(normalized);
       // Always store the normalized object so UI can inspect `code`/`detail`
       setError({
         message: normalized.message,
