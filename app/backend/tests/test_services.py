@@ -49,7 +49,9 @@ def test_get_empty_recipes_returns_empty_list() -> None:
 def test_generate_recipe_from_ingredients_creates_structured_recipe() -> None:
     ingredients = ["tomato", "basil", "pasta"]
 
-    recipe = generate_recipe_from_ingredients(ingredients)
+    recipes = generate_recipe_from_ingredients(ingredients)
+    assert len(recipes) == 1
+    recipe = recipes[0]
     assert recipe.title is not None
     assert recipe.ingredients is not None
     assert recipe.steps is not None
@@ -116,7 +118,9 @@ def test_normalize_ingredients_removes_duplicates_case_insensitive_and_trims() -
 
 def test_generate_recipe_steps_reference_ingredients_and_are_non_empty() -> None:
     ingredients = ["egg", "milk", "flour"]
-    recipe = generate_recipe_from_ingredients(ingredients)
+    recipes = generate_recipe_from_ingredients(ingredients)
+    assert len(recipes) == 1
+    recipe = recipes[0]
 
     # Steps should be non-empty strings
     assert isinstance(recipe.steps, list)
@@ -128,7 +132,9 @@ def test_generate_recipe_steps_reference_ingredients_and_are_non_empty() -> None
 
 def test_generate_recipe_with_long_names_handles_length_gracefully() -> None:
     long_name = "very-" + "long-" * 20 + "ingredient"
-    recipe = generate_recipe_from_ingredients([long_name, "salt"])
+    recipes = generate_recipe_from_ingredients([long_name, "salt"])
+    assert len(recipes) == 1
+    recipe = recipes[0]
     # Should return a recipe without crashing and with non-empty ingredients/steps
     assert recipe.ingredients is not None
     assert len(recipe.ingredients) > 0
@@ -142,7 +148,9 @@ def test_generate_recipe_with_gemini_falls_back_when_unavailable(monkeypatch) ->
 
     monkeypatch.setattr("app.services.get_model_manager", lambda: FailingGeminiManager())
 
-    recipe = generate_recipe_from_ingredients(["tomato", "garlic"], model_choice="gemini")
+    recipes = generate_recipe_from_ingredients(["tomato", "garlic"], model_choices=["gemini"])
+    assert len(recipes) == 1
+    recipe = recipes[0]
     assert recipe.model == "gemini"
     assert recipe.title
     assert len(recipe.steps) >= 3

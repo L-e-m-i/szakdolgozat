@@ -18,14 +18,29 @@ import type { components } from "../types";
 type ApiIngredient = components["schemas"]["RecipeIngredient"];
 type ApiRecipe = components["schemas"]["Recipe"];
 
-type ModelChoice = "scratch" | "finetuned" | "gemini" | "both";
+type ModelChoice = "scratch" | "finetuned" | "gemini";
 
 export default function Index() {
   const [inputText, setInputText] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [modelChoice, setModelChoice] = useState<ModelChoice>("finetuned");
+  const [selectedModels, setSelectedModels] = useState<ModelChoice[]>(["finetuned"]);
   const navigate = useNavigate();
+
+  const toggleModel = (model: ModelChoice) => {
+    setSelectedModels((prev) => {
+      if (prev.includes(model)) {
+        if (prev.length === 1) return prev;
+        return prev.filter((item) => item !== model);
+      }
+
+      if (prev.length >= 3) {
+        return prev;
+      }
+
+      return [...prev, model];
+    });
+  };
 
   const addTag = () => {
     const val = inputText.trim();
@@ -57,13 +72,18 @@ export default function Index() {
       return;
     }
 
+    if (selectedModels.length < 1 || selectedModels.length > 3) {
+      alert("Please select between 1 and 3 models.");
+      return;
+    }
+
     setIsLoading(true);
 
     try {
       const resp = await fetch("http://127.0.0.1:8000/recipes/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ingredients: tags, model: modelChoice }),
+        body: JSON.stringify({ ingredients: tags, models: selectedModels }),
       });
 
       if (!resp.ok) {
@@ -150,17 +170,17 @@ export default function Index() {
 
         <div className="mb-8 p-4 bg-gray-50 border border-gray-200 rounded-md">
           <label className="block text-lg font-medium text-gray-700 mb-4">
-            Choose AI Model
+            Choose AI Models (1-3)
           </label>
           <div className="space-y-3">
             <div className="flex items-center">
               <input
-                type="radio"
+                type="checkbox"
                 id="model-finetuned"
                 name="model"
                 value="finetuned"
-                checked={modelChoice === "finetuned"}
-                onChange={(e) => setModelChoice(e.target.value as ModelChoice)}
+                checked={selectedModels.includes("finetuned")}
+                onChange={() => toggleModel("finetuned")}
                 disabled={isLoading}
                 className="w-4 h-4 text-blue-600 cursor-pointer"
               />
@@ -177,12 +197,12 @@ export default function Index() {
 
             <div className="flex items-center">
               <input
-                type="radio"
+                type="checkbox"
                 id="model-gemini"
                 name="model"
                 value="gemini"
-                checked={modelChoice === "gemini"}
-                onChange={(e) => setModelChoice(e.target.value as ModelChoice)}
+                checked={selectedModels.includes("gemini")}
+                onChange={() => toggleModel("gemini")}
                 disabled={isLoading}
                 className="w-4 h-4 text-blue-600 cursor-pointer"
               />
@@ -199,12 +219,12 @@ export default function Index() {
 
             <div className="flex items-center">
               <input
-                type="radio"
+                type="checkbox"
                 id="model-scratch"
                 name="model"
                 value="scratch"
-                checked={modelChoice === "scratch"}
-                onChange={(e) => setModelChoice(e.target.value as ModelChoice)}
+                checked={selectedModels.includes("scratch")}
+                onChange={() => toggleModel("scratch")}
                 disabled={isLoading}
                 className="w-4 h-4 text-blue-600 cursor-pointer"
               />
@@ -219,28 +239,10 @@ export default function Index() {
               </label>
             </div>
 
-            <div className="flex items-center">
-              <input
-                type="radio"
-                id="model-both"
-                name="model"
-                value="both"
-                checked={modelChoice === "both"}
-                onChange={(e) => setModelChoice(e.target.value as ModelChoice)}
-                disabled={isLoading}
-                className="w-4 h-4 text-blue-600 cursor-pointer"
-              />
-              <label
-                htmlFor="model-both"
-                className="ml-3 cursor-pointer text-gray-700"
-              >
-                <span className="font-medium">Both Models</span>
-                <p className="text-sm text-gray-500">
-                  Compare recipes from both models
-                </p>
-              </label>
-            </div>
           </div>
+          <p className="text-xs text-gray-500 mt-3">
+            Select at least 1 model and up to 3 models.
+          </p>
         </div>
 
         <div className="text-center">

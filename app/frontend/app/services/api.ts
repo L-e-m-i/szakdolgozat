@@ -312,15 +312,24 @@ export async function flushLocalSavedRecipes(): Promise<void> {
   localStorage.removeItem(PENDING_SAVES_KEY);
 }
 
-export async function generateRecipe(ingredients: string[]): Promise<Recipe> {
+type RecipeModelChoice = "scratch" | "finetuned" | "gemini";
+
+export async function generateRecipe(
+  ingredients: string[],
+  models: RecipeModelChoice[] = ["finetuned"],
+): Promise<Recipe[]> {
   if (!Array.isArray(ingredients) || ingredients.length === 0) {
     throw new ApiError("At least one ingredient is required");
   }
 
-  return request<Recipe>("/recipes/generate", {
+  if (!Array.isArray(models) || models.length < 1 || models.length > 3) {
+    throw new ApiError("Select between 1 and 3 models");
+  }
+
+  return request<Recipe[]>("/recipes/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ingredients }),
+    body: JSON.stringify({ ingredients, models }),
   });
 }
 

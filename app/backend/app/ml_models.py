@@ -124,14 +124,16 @@ class ModelManager:
         ingredients_text = ", ".join(ingredients).lower()
 
         prompt = (
-            "Generate one practical recipe from these ingredients: "
+            "Generate one practical home-cooking recipe from these ingredients: "
             f"{ingredients_text}. "
-            "Return valid JSON only with keys: title (string), time (string), "
-            "ingredients (array of objects with name and optional amount), "
-            "steps (array of strings). Do not include markdown or extra text."
-            "aim for concise, clear instructions suitable for a home cook."
-            "It's not neccesary to use all ingredients, you can add other items, but try to include as many of the provided ones as possible."
-            "Add common items if it helps make a more complete recipe (e.g. water, oil, salt, pepper)."
+            "Return only valid JSON (no markdown, no extra text) with exactly these keys: "
+            "title (string), time (string), ingredients (array of objects with name and optional amount), "
+            "steps (array of strings). "
+            "It is not necessary to use all provided ingredients, but include as many as reasonably possible. "
+            "You may add common pantry items if needed (for example: water, oil, salt, pepper). "
+            "Keep the instructions concise, clear, and easy for a home cook to follow."
+            "Do not include any apologies, disclaimers, or extraneous commentary. "
+            "Do not include any formatting like markdown, bullet points, or numbering in the steps."
         )
 
         try:

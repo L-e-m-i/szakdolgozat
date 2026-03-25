@@ -13,6 +13,7 @@ This repository contains a full-stack recipe application (React + Vite frontend,
   - [Tech stack](#tech-stack)
   - [Prerequisites](#prerequisites)
   - [Environment variables](#environment-variables)
+  - [Gemini recipe generation](#gemini-recipe-generation)
   - [Development — Docker Compose (recommended)](#development--docker-compose-recommended)
   - [Production build / SSR frontend](#production-build--ssr-frontend)
   - [Running services individually (local dev without Docker)](#running-services-individually-local-dev-without-docker)
@@ -84,7 +85,7 @@ Core technologies:
 - ML features:
   - **Hugging Face Spaces** (external inference endpoints)
   - **gradio_client** (client for recipe generation models)
-  - **Model selection** ([finetuned](https://huggingface.co/spaces/l-e-m-i/finetuned_space), [scratch](https://huggingface.co/spaces/l-e-m-i/scratch_space), `gemini`, or `both`)
+  - **Model selection** (choose 1-3 from [finetuned](https://huggingface.co/spaces/l-e-m-i/finetuned_space), [scratch](https://huggingface.co/spaces/l-e-m-i/scratch_space), `gemini`)
 - Database:
   - **PostgreSQL** (official Docker image)
 - Dev & Deployment:
@@ -139,6 +140,37 @@ Create `app/frontend/.env` (or copy from `.env.example`) and set the frontend AP
 VITE_API_BASE_URL=http://localhost:8000
 VITE_PORT=5173
 ```
+
+---
+
+## Gemini recipe generation
+
+The backend supports Gemini as a recipe generation model through the existing `/recipes/generate` endpoint.
+
+Requirements:
+- `GEMINI_API_KEY` must be set in `app/.env`.
+- `GEMINI_MODEL` is optional. Default: `gemini-2.5-flash`.
+- Backend dependency is already included: `google-generativeai`.
+
+How to request Gemini output:
+- Send `models` in the request body with 1-3 values from `scratch`, `finetuned`, `gemini`.
+- Include `"gemini"` in the array when you want a Gemini recipe.
+
+Example request:
+
+```bash
+curl -X POST http://localhost:8000/recipes/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ingredients": ["chicken", "rice", "onion"],
+    "models": ["gemini", "finetuned"]
+  }'
+```
+
+Response notes:
+- The endpoint returns an array with one recipe per selected model.
+- Each returned recipe includes a `model` field (for example `"gemini"`).
+- If Gemini is unavailable (missing key, SDK issue, API failure), the service returns a fallback Gemini recipe instead of failing the whole request.
 
 ---
 

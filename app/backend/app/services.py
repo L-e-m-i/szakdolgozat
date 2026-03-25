@@ -4,7 +4,7 @@ import logging
 from typing import List
 
 from app.ml_models import get_model_manager
-from app.models import DualRecipeResponse, Recipe, RecipeIngredient
+from app.models import Recipe, RecipeIngredient
 
 logger = logging.getLogger(__name__)
 
@@ -63,122 +63,83 @@ def _extract_ingredient_names(model_ingredients: object, fallback: List[str]) ->
 
 
 def generate_recipe_from_ingredients(
-    raw_ingredients: List[str], model_choice: str = "finetuned"
-) -> Recipe | DualRecipeResponse:
+    raw_ingredients: List[str], model_choices: List[str] | None = None
+) -> list[Recipe]:
     """Generate recipe using AI models based on ingredients.
 
     Args:
         raw_ingredients: List of ingredient names
-        model_choice: Which model to use ('scratch', 'finetuned', 'gemini', or 'both')
+        model_choices: Which models to use (1-3): 'scratch', 'finetuned', 'gemini'
 
     Returns:
-        Recipe or DualRecipeResponse (if model_choice is 'both')
+        A list of generated recipes, one per selected model
 
     Raises:
         ValueError: If input is invalid or generation fails
     """
     ingredients = _normalize_ingredients(raw_ingredients)
+    selected_models = model_choices or ["finetuned"]
+
+    if len(selected_models) < 1 or len(selected_models) > 3:
+        raise ValueError("Select between 1 and 3 models.")
+
+    if len(set(selected_models)) != len(selected_models):
+        raise ValueError("Duplicate models are not allowed.")
+
     manager = get_model_manager()
+    recipes: list[Recipe] = []
 
     try:
-        if model_choice == "both":
-            # Generate with both models
-            try:
-                scratch_data = manager.generate_recipe_with_scratch(ingredients)
-                scratch_steps = _normalize_steps(
-                    scratch_data.get("steps")
-                    if isinstance(scratch_data.get("steps"), list)
-                    else [str(scratch_data.get("steps", ""))],
-                )
-                scratch_ingredient_names = _extract_ingredient_names(
-                    scratch_data.get("ingredients"),
-                    ingredients,
-                )
-                scratch_recipe = Recipe(
-                    title=scratch_data["title"],
-                    time=scratch_data.get("time"),
+        for model_choice in selected_models:
+            if model_choice == "scratch":
+                try:
+                    data = manager.generate_recipe_with_scratch(ingredients)
+                except Exception as e:
+                    logger.warning(f"Scratch model generation failed: {e}")
+                    recipes.append(_create_fallback_recipe(ingredients, "scratch"))
+                    continue
+
+            elif model_choice == "finetuned":
+                try:
+                    data = manager.generate_recipe_with_finetuned(ingredients)
+                except Exception as e:
+                    logger.warning(f"Fine-tuned model generation failed: {e}")
+                    recipes.append(_create_fallback_recipe(ingredients, "finetuned"))
+                    continue
+
+            elif model_choice == "gemini":
+                try:
+                    data = manager.generate_recipe_with_gemini(ingredients)
+                except Exception as e:
+                    logger.warning(f"Gemini model generation failed: {e}")
+                    recipes.append(_create_fallback_recipe(ingredients, "gemini"))
+                    continue
+
+            else:
+                raise ValueError(f"Unknown model choice: {model_choice}")
+
+            model_steps = _normalize_steps(
+                data.get("steps") if isinstance(data.get("steps"), list) else [str(data.get("steps", ""))],
+            )
+            model_ingredient_names = _extract_ingredient_names(
+                data.get("ingredients"),
+                ingredients,
+            )
+
+            recipes.append(
+                Recipe(
+                    title=str(data.get("title", "Generated Recipe")),
+                    time=data.get("time"),
                     ingredients=[
                         RecipeIngredient(name=ing_name)
-                        for ing_name in scratch_ingredient_names
+                        for ing_name in model_ingredient_names
                     ],
-                    steps=scratch_steps,
-                    model="scratch",
+                    steps=model_steps,
+                    model=str(data.get("model") or model_choice),
                 )
-            except Exception as e:
-                logger.warning(f"Scratch model generation failed: {e}")
-                scratch_recipe = _create_fallback_recipe(ingredients, "scratch")
+            )
 
-            try:
-                finetuned_data = manager.generate_recipe_with_finetuned(ingredients)
-                finetuned_steps = _normalize_steps(
-                    finetuned_data.get("steps")
-                    if isinstance(finetuned_data.get("steps"), list)
-                    else [str(finetuned_data.get("steps", ""))],
-                )
-                finetuned_ingredient_names = _extract_ingredient_names(
-                    finetuned_data.get("ingredients"),
-                    ingredients,
-                )
-                finetuned_recipe = Recipe(
-                    title=finetuned_data["title"],
-                    time=finetuned_data.get("time"),
-                    ingredients=[
-                        RecipeIngredient(name=ing_name)
-                        for ing_name in finetuned_ingredient_names
-                    ],
-                    steps=finetuned_steps,
-                    model="finetuned",
-                )
-            except Exception as e:
-                logger.warning(f"Fine-tuned model generation failed: {e}")
-                finetuned_recipe = _create_fallback_recipe(ingredients, "finetuned")
-
-            return DualRecipeResponse(scratch=scratch_recipe, finetuned=finetuned_recipe)
-
-        elif model_choice == "scratch":
-            try:
-                data = manager.generate_recipe_with_scratch(ingredients)
-            except Exception as e:
-                logger.warning(f"Scratch model generation failed: {e}")
-                return _create_fallback_recipe(ingredients, "scratch")
-
-        elif model_choice == "finetuned":
-            try:
-                data = manager.generate_recipe_with_finetuned(ingredients)
-            except Exception as e:
-                logger.warning(f"Fine-tuned model generation failed: {e}")
-                return _create_fallback_recipe(ingredients, "finetuned")
-
-        elif model_choice == "gemini":
-            try:
-                data = manager.generate_recipe_with_gemini(ingredients)
-            except Exception as e:
-                logger.warning(f"Gemini model generation failed: {e}")
-                return _create_fallback_recipe(ingredients, "gemini")
-
-        else:
-            raise ValueError(f"Unknown model choice: {model_choice}")
-
-        model_steps = _normalize_steps(
-            data.get("steps") if isinstance(data.get("steps"), list) else [str(data.get("steps", ""))],
-        )
-        model_ingredient_names = _extract_ingredient_names(
-            data.get("ingredients"),
-            ingredients,
-        )
-
-        # Convert data dict to Recipe object
-        recipe = Recipe(
-            title=data["title"],
-            time=data.get("time"),
-            ingredients=[
-                RecipeIngredient(name=ing_name)
-                for ing_name in model_ingredient_names
-            ],
-            steps=model_steps,
-            model=data.get("model"),
-        )
-        return recipe
+        return recipes
 
     except Exception as e:
         logger.error(f"Recipe generation error: {e}")

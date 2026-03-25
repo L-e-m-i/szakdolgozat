@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Annotated, List, Optional
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, field_validator
 
 IngredientInput = Annotated[
     str,
@@ -17,7 +17,6 @@ class ModelChoice(str, Enum):
     scratch = "scratch"
     finetuned = "finetuned"
     gemini = "gemini"
-    both = "both"
 
 
 class RecipeIngredient(BaseModel):
@@ -70,21 +69,22 @@ class RecipeRequest(BaseModel):
         max_length=30,
         description="List of ingredient names",
     )
-    model: ModelChoice = Field(
-        ModelChoice.finetuned,
+    models: List[ModelChoice] = Field(
+        default_factory=lambda: [ModelChoice.finetuned],
+        min_length=1,
+        max_length=3,
         description=(
-            "Which model to use: 'scratch' (RecipeTransformerV4), "
-            "'finetuned' (Flan-T5), 'gemini' (Google Gemini), or "
-            "'both' (returns scratch + finetuned recipes)."
+            "Which models to use (1-3): 'scratch' (RecipeTransformerV4), "
+            "'finetuned' (Flan-T5), and/or 'gemini' (Google Gemini)."
         ),
     )
 
-
-class DualRecipeResponse(BaseModel):
-    """Response when model='both': contains one recipe from each model."""
-
-    scratch: Recipe
-    finetuned: Recipe
+    @field_validator("models")
+    @classmethod
+    def validate_unique_models(cls, value: List[ModelChoice]) -> List[ModelChoice]:
+        if len(set(value)) != len(value):
+            raise ValueError("Duplicate models are not allowed.")
+        return value
 
 
 class ErrorResponse(BaseModel):

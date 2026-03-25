@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import api from "../services/api";
 import type { components } from "../types";
@@ -7,7 +7,7 @@ import type { Route } from "./+types/recipe";
 type ApiRecipe = components["schemas"]["Recipe"];
 type ApiIngredient = components["schemas"]["RecipeIngredient"];
 
-type DualRecipeResponse = {
+type LegacyDualRecipeResponse = {
   scratch?: ApiRecipe;
   finetuned?: ApiRecipe;
 };
@@ -17,44 +17,45 @@ type DualRecipeResponse = {
  *
  * - Prefer recipe(s) passed via navigation state: navigate("/recipe", { state: { recipe } })
  * - Accepts backend shape for single recipe: { title, ingredients: [{ name, amount? }], steps }
- * - Accepts DualRecipeResponse for dual models: { scratch: Recipe, finetuned: Recipe }
+ * - Accepts a list of recipes when multiple models are selected
+ * - Accepts legacy dual response shape: { scratch: Recipe, finetuned: Recipe }
  * - If no recipe in navigation state, shows a helpful message and link back to generator.
  */
 
 export default function RecipeView({}: Route.ComponentProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"scratch" | "finetuned">("scratch");
+  const [activeTabIndex, setActiveTabIndex] = useState(0);
 
-  type LocationState = { recipe?: ApiRecipe | DualRecipeResponse } | undefined;
+  type LocationState = { recipe?: ApiRecipe | ApiRecipe[] | LegacyDualRecipeResponse } | undefined;
   const state = (location.state as LocationState) ?? undefined;
   const recipeData = state?.recipe;
-  console.log(recipeData)
-  // Check if it's a DualRecipeResponse
-  const isDualResponse =
-    recipeData &&
-    typeof recipeData === "object" &&
-    ("scratch" in recipeData || "finetuned" in recipeData);
 
-  const getCurrentRecipe = (): ApiRecipe | null => {
-    if (!recipeData) return null;
+  const recipes: ApiRecipe[] = (() => {
+    if (!recipeData) return [];
 
-    if (isDualResponse) {
-      const dualData = recipeData as DualRecipeResponse;
-      if (activeTab === "scratch" && dualData.scratch) {
-        return dualData.scratch;
-      } else if (activeTab === "finetuned" && dualData.finetuned) {
-        return dualData.finetuned;
-      }
-      // Fallback: return whichever is available
-      return dualData.scratch || dualData.finetuned || null;
+    if (Array.isArray(recipeData)) {
+      return recipeData;
     }
 
-    return recipeData as ApiRecipe;
-  };
+    if (
+      typeof recipeData === "object" &&
+      ("scratch" in recipeData || "finetuned" in recipeData)
+    ) {
+      const legacy = recipeData as LegacyDualRecipeResponse;
+      return [legacy.scratch, legacy.finetuned].filter((item): item is ApiRecipe => Boolean(item));
+    }
 
-  const recipe = getCurrentRecipe();
-  console.log(recipe)
+    return [recipeData as ApiRecipe];
+  })();
+
+  useEffect(() => {
+    if (activeTabIndex > recipes.length - 1) {
+      setActiveTabIndex(0);
+    }
+  }, [activeTabIndex, recipes.length]);
+
+  const recipe = recipes[activeTabIndex] ?? null;
   // Helper accessors to normalize fields
   const title = recipe?.title ?? null;
   const ingredients: { name: string; amount?: string }[] =
@@ -165,32 +166,31 @@ export default function RecipeView({}: Route.ComponentProps) {
   return (
     <div className="max-w-5xl mx-auto p-6">
       <div className="bg-white border border-gray-200 rounded-lg shadow p-8">
-        {isDualResponse && (
+        {recipes.length > 1 && (
           <div className="mb-6 border-b pb-6">
             <h2 className="text-lg font-semibold text-gray-700 mb-4">
               Select Model
             </h2>
             <div className="flex gap-4">
-              <button
-                onClick={() => setActiveTab("scratch")}
-                className={`px-6 py-2 rounded-md font-semibold transition ${
-                  activeTab === "scratch"
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                }`}
-              >
-                Custom Model
-              </button>
-              <button
-                onClick={() => setActiveTab("finetuned")}
-                className={`px-6 py-2 rounded-md font-semibold transition ${
-                  activeTab === "finetuned"
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                }`}
-              >
-                Fine-tuned Model
-              </button>
+              {recipes.map((item, index) => {
+                const label = item.model
+                  ? `${item.model.charAt(0).toUpperCase()}${item.model.slice(1)} model`
+                  : `Recipe ${index + 1}`;
+
+                return (
+                  <button
+                    key={`${item.model ?? "model"}-${index}`}
+                    onClick={() => setActiveTabIndex(index)}
+                    className={`px-6 py-2 rounded-md font-semibold transition ${
+                      activeTabIndex === index
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -253,7 +253,7 @@ export default function RecipeView({}: Route.ComponentProps) {
               <ol className="space-y-4">
                 {steps.map((step, idx) => (
                   <li key={idx} className="flex gap-4">
-                    <span className="flex-shrink-0 flex items-center justify-center w-8 h-8 bg-blue-600 text-white rounded-full font-semibold">
+                    <span className="shrink-0 flex items-center justify-center w-8 h-8 bg-blue-600 text-white rounded-full font-semibold">
                       {idx + 1}
                     </span>
                     <span className="text-gray-700 pt-1">{step}</span>

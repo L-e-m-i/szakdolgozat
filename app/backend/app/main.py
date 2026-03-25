@@ -26,7 +26,7 @@ from app.db.session import get_db
 
 # Use absolute package imports within the backend package so the module can be
 # executed reliably whether started via `uvicorn app.main:app` or as part of a larger project.
-from app.models import DualRecipeResponse, ErrorResponse, Recipe, RecipeRequest
+from app.models import ErrorResponse, Recipe, RecipeRequest
 from app.services import (
     generate_recipe_from_ingredients,
     get_empty_recipes,
@@ -318,20 +318,21 @@ def create_database() -> dict:
     "/recipes/generate",
     responses={400: {"model": ErrorResponse}},
 )
-async def generate_recipe(request: RecipeRequest) -> Recipe | DualRecipeResponse:
+async def generate_recipe(request: RecipeRequest) -> list[Recipe]:
     """Generate a recipe from ingredients using AI models.
 
     Args:
-        request: RecipeRequest with ingredients and optional model choice
+        request: RecipeRequest with ingredients and selected models
                 - ingredients: list of ingredient names
-                - model: 'scratch', 'finetuned', 'gemini', or 'both' (default: 'finetuned')
+                - models: list with 1-3 entries from 'scratch', 'finetuned', 'gemini'
 
     Returns:
-        Recipe or DualRecipeResponse (if model='both')
+        List of recipes, one per selected model
     """
     try:
         result = generate_recipe_from_ingredients(
-            request.ingredients, model_choice=request.model.value
+            request.ingredients,
+            model_choices=[model.value for model in request.models],
         )
         return result
     except ValueError as exc:  # invalid / empty input
