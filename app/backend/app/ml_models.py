@@ -140,7 +140,7 @@ class ModelManager:
             raise RuntimeError("GEMINI_API_KEY is not configured.")
 
         try:
-            genai = importlib.import_module("google.generativeai")
+            genai = importlib.import_module("google.genai")
         except ImportError as e:
             raise RuntimeError("Gemini SDK is not installed.") from e
 
