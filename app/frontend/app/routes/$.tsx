@@ -1,5 +1,15 @@
 import { Link } from "react-router";
+import type { Route } from "./+types/$";
 
+export function meta({}: Route.MetaArgs) {
+  return [
+    { title: "Oops, this page could not be found." },
+    {
+      name: "description",
+      content: "The page you are looking for does not exist. It may have been renamed or deleted.",
+    },
+  ];
+}
 
 export default function CatchAll() {
   return (

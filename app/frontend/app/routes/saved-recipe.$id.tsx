@@ -9,8 +9,19 @@ import {
 import api from "../services/api";
 import type { components } from "../types/index";
 import { Form } from "react-router";
+import type { Route } from "./+types/saved-recipe.$id";
 type ApiRecipe = components["schemas"]["Recipe"];
 type ApiIngredient = components["schemas"]["RecipeIngredient"];
+
+export function meta({}: Route.MetaArgs) {
+  return [
+    { title: "Saved Recipe" },
+    {
+      name: "description",
+      content: "Saved recipe details",
+    },
+  ];
+}
 
 /**
  * Route loader for /recipe/:id

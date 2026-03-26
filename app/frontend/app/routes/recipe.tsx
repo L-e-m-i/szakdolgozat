@@ -14,6 +14,16 @@ type LegacyDualRecipeResponse = {
 
 const RECIPE_STORAGE_KEY = "recipe_current_view";
 
+export function meta({}: Route.MetaArgs) {
+  return [
+    { title: "Recipe Generator" },
+    {
+      name: "description",
+      content: "Generated recipe details and instructions",
+    },
+  ];
+}
+
 /**
  * Recipe view
  *
