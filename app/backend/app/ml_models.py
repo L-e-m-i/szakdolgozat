@@ -167,8 +167,7 @@ class ModelManager:
 
                 response = client.models.generate_content(
                     model=model_name,
-                    contents=prompt,
-                    timeout=ML_MODEL_TIMEOUT
+                    contents=prompt
                 )
                 raw_text = str(getattr(response, "text", "") or "").strip()
 
