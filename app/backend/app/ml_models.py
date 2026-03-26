@@ -10,7 +10,8 @@ import importlib
 import time
 from typing import Any, Optional
 from gradio_client import Client
-
+from google import genai
+from google.genai import types
 logger = logging.getLogger(__name__)
 
 # =====================================================================
@@ -140,7 +141,7 @@ class ModelManager:
             raise RuntimeError("GEMINI_API_KEY is not configured.")
 
         try:
-            genai = importlib.import_module("google.genai")
+            client = genai.Client(api_key=api_key, timeout=ML_MODEL_TIMEOUT)
         except ImportError as e:
             raise RuntimeError("Gemini SDK is not installed.") from e
 
@@ -165,10 +166,9 @@ class ModelManager:
         for attempt in range(1, ML_MODEL_MAX_RETRIES + 1):
             try:
                 logger.info(f"Gemini model attempt {attempt}/{ML_MODEL_MAX_RETRIES}")
-                genai.configure(api_key=api_key)
 
                 if self.gemini_model is None or self.gemini_model_name != model_name:
-                    self.gemini_model = genai.GenerativeModel(model_name)
+                    self.gemini_model = client.GenerativeModel(model_name)
                     self.gemini_model_name = model_name
 
                 response = self.gemini_model.generate_content(prompt)
