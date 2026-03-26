@@ -13,7 +13,7 @@ from gradio_client import Client
 from google import genai
 logger = logging.getLogger(__name__)
 
-client = genai.Client()
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY", "").strip())
 
 # =====================================================================
 # HUGGING FACE SPACES CONFIGURATION
