@@ -12,6 +12,8 @@ type LegacyDualRecipeResponse = {
   finetuned?: ApiRecipe;
 };
 
+const RECIPE_STORAGE_KEY = "recipe_current_view";
+
 /**
  * Recipe view
  *
@@ -19,35 +21,60 @@ type LegacyDualRecipeResponse = {
  * - Accepts backend shape for single recipe: { title, ingredients: [{ name, amount? }], steps }
  * - Accepts a list of recipes when multiple models are selected
  * - Accepts legacy dual response shape: { scratch: Recipe, finetuned: Recipe }
- * - If no recipe in navigation state, shows a helpful message and link back to generator.
+ * - If no recipe in navigation state, falls back to sessionStorage
+ * - If no recipe anywhere, shows a helpful message and link back to generator.
  */
 
 export default function RecipeView({}: Route.ComponentProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const [activeTabIndex, setActiveTabIndex] = useState(0);
+  const [recipes, setRecipes] = useState<ApiRecipe[]>([]);
 
   type LocationState = { recipe?: ApiRecipe | ApiRecipe[] | LegacyDualRecipeResponse } | undefined;
   const state = (location.state as LocationState) ?? undefined;
   const recipeData = state?.recipe;
 
-  const recipes: ApiRecipe[] = (() => {
-    if (!recipeData) return [];
+  // Initialize recipes from navigation state or sessionStorage
+  useEffect(() => {
+    if (recipeData) {
+      let parsed: ApiRecipe[] = [];
 
-    if (Array.isArray(recipeData)) {
-      return recipeData;
+      if (Array.isArray(recipeData)) {
+        parsed = recipeData;
+      } else if (
+        typeof recipeData === "object" &&
+        ("scratch" in recipeData || "finetuned" in recipeData)
+      ) {
+        const legacy = recipeData as LegacyDualRecipeResponse;
+        parsed = [legacy.scratch, legacy.finetuned].filter((item): item is ApiRecipe => Boolean(item));
+      } else {
+        parsed = [recipeData as ApiRecipe];
+      }
+
+      setRecipes(parsed);
+      
+      // Persist to sessionStorage for page refresh
+      try {
+        sessionStorage.setItem(RECIPE_STORAGE_KEY, JSON.stringify(parsed));
+      } catch {
+        // sessionStorage may fail in private browsing
+      }
+    } else {
+      // Try to load from sessionStorage
+      try {
+        const stored = sessionStorage.getItem(RECIPE_STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored) as ApiRecipe[];
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setRecipes(parsed);
+          }
+        }
+      } catch {
+        // ignore parse errors
+      }
     }
-
-    if (
-      typeof recipeData === "object" &&
-      ("scratch" in recipeData || "finetuned" in recipeData)
-    ) {
-      const legacy = recipeData as LegacyDualRecipeResponse;
-      return [legacy.scratch, legacy.finetuned].filter((item): item is ApiRecipe => Boolean(item));
-    }
-
-    return [recipeData as ApiRecipe];
-  })();
+  }, [recipeData]);
 
   useEffect(() => {
     if (activeTabIndex > recipes.length - 1) {

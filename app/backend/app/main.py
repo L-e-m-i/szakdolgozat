@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from contextlib import asynccontextmanager
 import json
 import logging
@@ -126,6 +125,41 @@ async def auth_cookie_middleware(request: Request, call_next):
 
 # Register middleware early
 app.add_middleware(BaseHTTPMiddleware, dispatch=auth_cookie_middleware)
+
+
+# Custom middleware to add security headers to all responses
+async def security_headers_middleware(request: Request, call_next):
+    """
+    Add security headers to all responses:
+    - X-Frame-Options: DENY (prevent clickjacking)
+    - X-Content-Type-Options: nosniff (prevent MIME sniffing)
+    - Content-Security-Policy: restrict resource loading (with Swagger UI support)
+    - Referrer-Policy: limit referrer information
+    """
+    response = await call_next(request)
+    
+    # Prevent clickjacking attacks
+    response.headers["X-Frame-Options"] = "DENY"
+    # Prevent MIME type sniffing
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    # Content Security Policy - allow Swagger UI CDN resources
+    # Note: In production, consider hosting Swagger UI locally or using a stricter CSP
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
+        "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; "
+        "connect-src 'self' http://localhost:* http://backend:*; "
+        "img-src 'self' data: https:;"
+    )
+    # Referrer Policy - limit referrer information
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    
+    return response
+
+
+# Register security headers middleware
+app.add_middleware(BaseHTTPMiddleware, dispatch=security_headers_middleware)
 
 
 # Helper to coerce various detail shapes into a structured { message, code?, ... } dict.
@@ -383,8 +417,16 @@ async def save_recipe_endpoint(
     # Create DB saved recipe record
     saved = DBSavedRecipe(user_id=db_user.id, title=title, recipe_data=recipe_data)
     db.add(saved)
-    db.commit()
-    db.refresh(saved)
+    try:
+        db.commit()
+        db.refresh(saved)
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to save recipe to database")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"message": "Failed to save recipe", "code": "save_error"},
+        )
 
     # Persist the DB-assigned id into the stored recipe JSON so subsequent reads
     # include the saved id inside the recipe object itself.
@@ -397,6 +439,7 @@ async def save_recipe_endpoint(
             db.commit()
             db.refresh(saved)
     except Exception:
+        db.rollback()
         # Do not fail the save response if updating the JSON fails; log in real app.
         logger.exception("Failed to persist id into saved.recipe_data")
 
@@ -556,6 +599,14 @@ async def delete_saved_recipe_endpoint(
         )
 
     db.delete(saved)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to delete saved recipe")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"message": "Failed to delete recipe", "code": "delete_error"},
+        )
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)

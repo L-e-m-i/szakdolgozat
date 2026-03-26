@@ -7,6 +7,7 @@ import logging
 import re
 import json
 import importlib
+import time
 from typing import Any, Optional
 from gradio_client import Client
 
@@ -18,6 +19,11 @@ logger = logging.getLogger(__name__)
 T5_SPACE_ID = "l-e-m-i/finetuned_space"
 SCRATCH_SPACE_ID = "l-e-m-i/scratch_space"
 DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
+
+# Timeout for ML model API calls (seconds) - 2 minutes for slow models
+ML_MODEL_TIMEOUT = int(os.getenv("ML_MODEL_TIMEOUT", "120"))
+# Number of retry attempts for ML model calls
+ML_MODEL_MAX_RETRIES = int(os.getenv("ML_MODEL_MAX_RETRIES", "2"))
 
 
 class ModelManager:
@@ -46,41 +52,59 @@ class ModelManager:
         return self.scratch_client
 
     def generate_recipe_with_finetuned(self, ingredients: list[str]) -> dict:
-        """Request recipe from the fine-tuned T5 Hugging Face Space."""
+        """Request recipe from the fine-tuned T5 Hugging Face Space with retry logic."""
         ingredients_text = ", ".join(ingredients).lower()
-        
-        try:
-            client = self._get_t5_client()
-            
-            # API call to the HF Space
-            result = client.predict(
-                ingredients_text=ingredients_text,
-                api_name="/generate_recipe"
-            )
-            logger.info(f"Received result from T5 Space: {result}")
-            return self._process_api_result(result, ingredients, model_name="finetuned")
-            
-        except Exception as e:
-            logger.error(f"Error calling T5 Space API: {e}")
-            raise RuntimeError("Failed to connect to the T5 AI service.") from e
+        last_error = None
+
+        for attempt in range(1, ML_MODEL_MAX_RETRIES + 1):
+            try:
+                logger.info(f"T5 model attempt {attempt}/{ML_MODEL_MAX_RETRIES}")
+                client = self._get_t5_client()
+
+                # API call to the HF Space
+                result = client.predict(
+                    ingredients_text=ingredients_text,
+                    api_name="/generate_recipe"
+                )
+                logger.info(f"Received result from T5 Space: {result}")
+                return self._process_api_result(result, ingredients, model_name="finetuned")
+
+            except Exception as e:
+                last_error = e
+                logger.warning(f"T5 model attempt {attempt}/{ML_MODEL_MAX_RETRIES} failed: {e}")
+                if attempt < ML_MODEL_MAX_RETRIES:
+                    # Wait briefly before retry (exponential backoff)
+                    time.sleep(min(2 ** (attempt - 1), 5))  # 1s, 2s, 4s, max 5s
+
+        logger.error(f"T5 Space API failed after {ML_MODEL_MAX_RETRIES} attempts: {last_error}")
+        raise RuntimeError("Failed to connect to the T5 AI service after multiple attempts.") from last_error
 
     def generate_recipe_with_scratch(self, ingredients: list[str]) -> dict:
-        """Request recipe from the custom Scratch Hugging Face Space."""
+        """Request recipe from the custom Scratch Hugging Face Space with retry logic."""
         ingredients_text = ", ".join(ingredients).lower()
-        
-        try:
-            client = self._get_scratch_client()
-            
-            # API call to the Scratch HF Space (includes the forced_title param we added)
-            result = client.predict(
-                ingredients_text=ingredients_text,
-                api_name="/generate_scratch_recipe"
-            )
-            return self._process_api_result(result, ingredients, model_name="scratch")
-            
-        except Exception as e:
-            logger.error(f"Error calling Scratch Space API: {e}")
-            raise RuntimeError("Failed to connect to the Scratch AI service.") from e
+        last_error = None
+
+        for attempt in range(1, ML_MODEL_MAX_RETRIES + 1):
+            try:
+                logger.info(f"Scratch model attempt {attempt}/{ML_MODEL_MAX_RETRIES}")
+                client = self._get_scratch_client()
+
+                # API call to the Scratch HF Space (includes the forced_title param we added)
+                result = client.predict(
+                    ingredients_text=ingredients_text,
+                    api_name="/generate_scratch_recipe"
+                )
+                return self._process_api_result(result, ingredients, model_name="scratch")
+
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Scratch model attempt {attempt}/{ML_MODEL_MAX_RETRIES} failed: {e}")
+                if attempt < ML_MODEL_MAX_RETRIES:
+                    # Wait briefly before retry (exponential backoff)
+                    time.sleep(min(2 ** (attempt - 1), 5))  # 1s, 2s, 4s, max 5s
+
+        logger.error(f"Scratch Space API failed after {ML_MODEL_MAX_RETRIES} attempts: {last_error}")
+        raise RuntimeError("Failed to connect to the Scratch AI service after multiple attempts.") from last_error
 
     def _extract_json_object_from_text(self, text: str) -> Optional[dict[str, Any]]:
         """Extract a JSON object from model output text (with or without code fences)."""
@@ -110,7 +134,7 @@ class ModelManager:
             return None
 
     def generate_recipe_with_gemini(self, ingredients: list[str]) -> dict:
-        """Request recipe from Gemini and normalize output to backend format."""
+        """Request recipe from Gemini with retry logic and timeout."""
         api_key = os.getenv("GEMINI_API_KEY", "").strip()
         if not api_key:
             raise RuntimeError("GEMINI_API_KEY is not configured.")
@@ -131,32 +155,43 @@ class ModelManager:
             "steps (array of strings). "
             "It is not necessary to use all provided ingredients, but include as many as reasonably possible. "
             "You may add common pantry items if needed (for example: water, oil, salt, pepper). "
-            "Keep the instructions concise, clear, and easy for a home cook to follow."
+            "Keep the instructions concise, clear, and easy for a home cook to follow. "
+            "Do not include inedible or dangerous ingredients."
             "Do not include any apologies, disclaimers, or extraneous commentary. "
             "Do not include any formatting like markdown, bullet points, or numbering in the steps."
         )
 
-        try:
-            genai.configure(api_key=api_key)
+        last_error = None
+        for attempt in range(1, ML_MODEL_MAX_RETRIES + 1):
+            try:
+                logger.info(f"Gemini model attempt {attempt}/{ML_MODEL_MAX_RETRIES}")
+                genai.configure(api_key=api_key)
 
-            if self.gemini_model is None or self.gemini_model_name != model_name:
-                self.gemini_model = genai.GenerativeModel(model_name)
-                self.gemini_model_name = model_name
+                if self.gemini_model is None or self.gemini_model_name != model_name:
+                    self.gemini_model = genai.GenerativeModel(model_name)
+                    self.gemini_model_name = model_name
 
-            response = self.gemini_model.generate_content(prompt)
-            raw_text = str(getattr(response, "text", "") or "").strip()
+                response = self.gemini_model.generate_content(prompt)
+                raw_text = str(getattr(response, "text", "") or "").strip()
 
-            if not raw_text:
-                raise RuntimeError("Gemini returned an empty response.")
+                if not raw_text:
+                    raise RuntimeError("Gemini returned an empty response.")
 
-            parsed = self._extract_json_object_from_text(raw_text)
-            if parsed is not None:
-                return self._process_api_result(parsed, ingredients, model_name="gemini")
+                parsed = self._extract_json_object_from_text(raw_text)
+                if parsed is not None:
+                    return self._process_api_result(parsed, ingredients, model_name="gemini")
 
-            return self._process_api_result(raw_text, ingredients, model_name="gemini")
-        except Exception as e:
-            logger.error(f"Error calling Gemini API: {e}")
-            raise RuntimeError("Failed to connect to the Gemini AI service.") from e
+                return self._process_api_result(raw_text, ingredients, model_name="gemini")
+
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Gemini model attempt {attempt}/{ML_MODEL_MAX_RETRIES} failed: {e}")
+                if attempt < ML_MODEL_MAX_RETRIES:
+                    # Wait briefly before retry (exponential backoff)
+                    time.sleep(min(2 ** (attempt - 1), 5))  # 1s, 2s, 4s, max 5s
+
+        logger.error(f"Gemini API failed after {ML_MODEL_MAX_RETRIES} attempts: {last_error}")
+        raise RuntimeError("Failed to connect to the Gemini AI service after multiple attempts.") from last_error
 
     def _process_api_result(self, result: Any, original_ingredients: list[str], model_name: str) -> dict:
         """Parse the result from the HF Spaces into the expected backend dictionary format."""

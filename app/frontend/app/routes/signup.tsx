@@ -17,8 +17,7 @@ export default function SignUp() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Determine where to redirect after signup/login. If `location.state.from` is set,
-  // navigate back there; otherwise default to /profile.
+  // Determine where to redirect after signup
   type LocationState = { from?: { pathname?: string } | string } | undefined;
   const locState = (location.state as LocationState) ?? undefined;
   const fromPath =
@@ -26,7 +25,14 @@ export default function SignUp() {
       ? (locState.from.pathname ?? "/profile")
       : (locState?.from ?? "/profile");
 
-  
+  // Form fields
+  const [username, setUsername] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
+  // Check if already logged in (client-side only to avoid SSR mismatch)
   useEffect(() => {
     (async () => {
       try {
@@ -39,12 +45,6 @@ export default function SignUp() {
       }
     })();
   }, [fromPath, navigate]);
-  // Form fields
-  const [username, setUsername] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
 
   // UI state
   const [error, setError] = useState<ApiErrorShape>(null);
@@ -55,43 +55,75 @@ export default function SignUp() {
   // Username validation: alphanumeric + underscores, 3-30 chars
   const isUsernameValid = (u: string) => /^[A-Za-z0-9_]{3,30}$/.test(u);
 
-  // Simple password strength estimator (returns 0..4)
+  // Email validation
+  const isEmailValid = (e: string) => /\S+@\S+\.\S+/.test(e);
+
+  /**
+   * Password validation according to security requirements (Option A):
+   * - Minimum 8 characters
+   * - At least 1 uppercase letter
+   * - At least 1 lowercase letter
+   * - At least 1 number
+   */
+  function validatePassword(pw: string): { valid: boolean; errors: string[] } {
+    const errors: string[] = [];
+    
+    if (pw.length < 8) {
+      errors.push("Password must be at least 8 characters long");
+    }
+    if (!/[A-Z]/.test(pw)) {
+      errors.push("Password must contain at least one uppercase letter");
+    }
+    if (!/[a-z]/.test(pw)) {
+      errors.push("Password must contain at least one lowercase letter");
+    }
+    if (!/\d/.test(pw)) {
+      errors.push("Password must contain at least one number");
+    }
+    
+    return { valid: errors.length === 0, errors };
+  }
+
+  // Simple password strength estimator (returns 0..5 for UI feedback)
   function passwordStrength(pw: string) {
     let score = 0;
     // Check password length
-    if (pw.length > 8) score += 1;
+    if (pw.length >= 8) score += 1;
+    if (pw.length >= 12) score += 1;
     // Contains lowercase
     if (/[a-z]/.test(pw)) score += 1;
     // Contains uppercase
     if (/[A-Z]/.test(pw)) score += 1;
     // Contains numbers
     if (/\d/.test(pw)) score += 1;
-    // Contains special characters
+    // Contains special characters (bonus)
     if (/[^A-Za-z0-9]/.test(pw)) score += 1;
 
-    return score;
+    return Math.min(score, 5);
   }
 
+  const passwordValidation = validatePassword(password);
   const strength = passwordStrength(password);
   const strengthLabel =
-    strength === 0
-      ? "Too Short"
-      : strength === 1
-        ? "Weak"
-        : strength === 2
-          ? "Fair"
-          : strength === 3
-            ? "Good"
-            : "Strong";
+    strength <= 1
+      ? "Too Weak"
+      : strength === 2
+        ? "Fair"
+        : strength === 3
+          ? "Good"
+          : strength >= 4
+            ? "Strong"
+            : "Very Strong";
 
   const canSubmit =
     username &&
     isUsernameValid(username) &&
     email &&
+    isEmailValid(email) &&
     password &&
+    passwordValidation.valid &&
     confirmPassword &&
-    password === confirmPassword &&
-    strength >= 2;
+    password === confirmPassword;
 
   const clearFieldErrors = () => setFieldErrors({});
 
@@ -114,15 +146,20 @@ export default function SignUp() {
       return;
     }
 
+    if (!isEmailValid(email)) {
+      setError({ message: "Please enter a valid email address." });
+      return;
+    }
+
     if (password !== confirmPassword) {
       setError({ message: "Passwords do not match." });
       return;
     }
 
-    if (passwordStrength(password) < 2) {
+    // Validate password meets security requirements
+    if (!passwordValidation.valid) {
       setError({
-        message:
-          "Password is too weak. Use a longer password with numbers and symbols.",
+        message: passwordValidation.errors[0],
       });
       return;
     }
@@ -290,14 +327,31 @@ export default function SignUp() {
                         ? "from-yellow-400 to-yellow-400"
                         : strength === 3
                           ? "from-green-400 to-green-500"
-                          : "from-green-600 to-green-700"
+                          : strength >= 4
+                            ? "from-green-600 to-green-700"
+                            : "from-green-700 to-green-800"
                   }`}
-                  style={{ width: `${(strength / 4) * 100}%` }}
+                  style={{ width: `${(strength / 5) * 100}%` }}
                 />
               </div>
               <p className="text-xs text-gray-600 mt-1">
                 Strength: {strengthLabel}
               </p>
+              {/* Password requirements checklist */}
+              <ul className="mt-2 space-y-1">
+                <li className={`text-xs ${password.length >= 8 ? 'text-green-600' : 'text-gray-500'}`}>
+                  {password.length >= 8 ? '✓' : '○'} At least 8 characters
+                </li>
+                <li className={`text-xs ${/[A-Z]/.test(password) ? 'text-green-600' : 'text-gray-500'}`}>
+                  {/[A-Z]/.test(password) ? '✓' : '○'} One uppercase letter
+                </li>
+                <li className={`text-xs ${/[a-z]/.test(password) ? 'text-green-600' : 'text-gray-500'}`}>
+                  {/[a-z]/.test(password) ? '✓' : '○'} One lowercase letter
+                </li>
+                <li className={`text-xs ${/\d/.test(password) ? 'text-green-600' : 'text-gray-500'}`}>
+                  {/\d/.test(password) ? '✓' : '○'} One number
+                </li>
+              </ul>
             </div>
           </div>
 

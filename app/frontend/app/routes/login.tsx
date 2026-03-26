@@ -14,8 +14,7 @@ export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // If a caller provided a `from` location (when redirecting to login),
-  // return the user there after successful login. Fallback to /profile.
+  // Determine where to redirect after successful login
   type LoginLocationState = { from?: { pathname?: string } | string };
   const state = (location.state as LoginLocationState | undefined) ?? undefined;
   const fromPath =
@@ -23,6 +22,14 @@ export default function Login() {
       ? (state.from.pathname ?? "/profile")
       : (state?.from ?? "/profile");
 
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  type ApiErrorShape = { message: string; code?: string; detail?: any } | null;
+  const [error, setError] = useState<ApiErrorShape>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  // Check if already logged in (client-side only to avoid SSR mismatch)
   useEffect(() => {
     (async () => {
       try {
@@ -36,15 +43,7 @@ export default function Login() {
     })();
   }, [fromPath, navigate]);
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  type ApiErrorShape = { message: string; code?: string; detail?: any } | null;
-  const [error, setError] = useState<ApiErrorShape>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
   function isEmailValid(e: string) {
-    // simple email check
     return /\S+@\S+\.\S+/.test(e);
   }
 
@@ -56,7 +55,6 @@ export default function Login() {
     setError(null);
     setSuccess(null);
 
-    // Validate inputs client-side before making network requests.
     if (!email || !password) {
       setError({ message: "Please fill in all fields." });
       return;
@@ -75,18 +73,15 @@ export default function Login() {
       try {
         await api.flushLocalSavedRecipes();
       } catch (flushErr) {
-        // keep as non-fatal; recipes will remain pending
         console.warn("Failed to flush local saved recipes:", flushErr);
       }
 
       setSuccess("Successfully logged in. Redirecting...");
-      // Short delay so user sees the success message
       setTimeout(() => {
         navigate(fromPath, { replace: true });
       }, 600);
     } catch (err: any) {
       const normalized = formatApiError(err);
-      // Always store the normalized object so UI can inspect `code`/`detail`
       setError({
         message: normalized.message,
         code: normalized.code,

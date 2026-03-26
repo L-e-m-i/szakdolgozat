@@ -1,61 +1,16 @@
-import React, { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router";
-import api from "../services/api";
+import React from "react";
+import { Link } from "react-router";
+import { useAuth } from "../hooks/useAuth";
 
 /**
  * Header component
  *
- * - Uses cookie-backed auth state from backend /auth/users/me.
- * - Handles logout by calling the API logout helper and clearing local state.
- * - Listens for auth-changed events to keep UI in sync.
+ * - Uses the useAuth hook for centralized auth state management
+ * - Displays user info when logged in, login/signup links when not
  */
 
 export default function Header() {
-  // Track the authenticated user (loaded from backend) or null for anonymous.
-  const [user, setUser] = useState<{
-    username?: string;
-    email?: string;
-  } | null>(null);
-  const [loadingUser, setLoadingUser] = useState(true);
-  const navigate = useNavigate();
-
-  // Load current user from backend; fall back to token presence if backend call fails.
-  const loadCurrentUser = async () => {
-    setLoadingUser(true);
-    try {
-      const u = await api.getCurrentUser();
-      // API returns null or user object; normalize to our shape
-      setUser(u ? { username: u.username, email: u.email } : null);
-    } catch {
-      setUser(null);
-    } finally {
-      setLoadingUser(false);
-    }
-  };
-
-  useEffect(() => {
-    loadCurrentUser();
-    // Keep header in sync with login/logout/refresh actions.
-    const onAuthChanged: EventListener = () => {
-      loadCurrentUser();
-    };
-    window.addEventListener("auth-changed", onAuthChanged);
-    return () => {
-      window.removeEventListener("auth-changed", onAuthChanged);
-    };
-  }, []);
-
-  const handleLogout = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    try {
-      await api.logout();
-    } catch (err) {
-      console.error("Logout failed", err);
-    } finally {
-      setUser(null);
-      navigate("/", { replace: true });
-    }
-  };
+  const { user, logout } = useAuth();
 
   return (
     <header className="flex items-center justify-between px-8 py-4 bg-white shadow-md">
@@ -70,7 +25,7 @@ export default function Header() {
               className="text-gray-600 hover:text-blue-600 transition-colors"
             >
               Generate Recipes
-            </Link> 
+            </Link>
           </li>
           {user ? (
             <>
@@ -89,7 +44,7 @@ export default function Header() {
               </li>
               <li>
                 <button
-                  onClick={handleLogout}
+                  onClick={logout}
                   className="text-gray-600 hover:text-blue-600 transition-colors bg-transparent border-0 p-0"
                 >
                   Log Out

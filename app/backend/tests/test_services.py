@@ -29,7 +29,7 @@ def _unique_email() -> str:
 def _auth_context() -> tuple[dict[str, str], str]:
     username = _unique_username()
     email = _unique_email()
-    password = "service-test-pass-123"
+    password = "ServiceTestPass123"  # Updated: meets password requirements (8+ chars, uppercase, lowercase, number)
 
     signup = client.post(
         "/auth/signup",

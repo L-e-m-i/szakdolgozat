@@ -55,6 +55,8 @@ const getBaseUrl = (): string => {
 
 const API_BASE = getBaseUrl().replace(/\/+$/, "");
 const PENDING_SAVES_KEY = "recipegen_pending_saves";
+// Pending saves expire after 24 hours for security
+const PENDING_SAVES_TTL_MS = 24 * 60 * 60 * 1000;
 
 async function handleResponse<T>(res: Response): Promise<T> {
   if (res.status === 204) {
@@ -246,9 +248,34 @@ export async function refreshAccessToken(): Promise<void> {
 function savePendingRecipeLocally(recipe: Recipe) {
   try {
     const raw = localStorage.getItem(PENDING_SAVES_KEY);
-    const arr: Recipe[] = raw ? JSON.parse(raw) : [];
-    arr.push(recipe);
-    localStorage.setItem(PENDING_SAVES_KEY, JSON.stringify(arr));
+    let pending: { recipe: Recipe; expiresAt: number }[] = [];
+    
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          // Migrate old format (array of recipes) to new format with TTL
+          pending = parsed
+            .filter((r) => r && typeof r === "object")
+            .map((r) => ({
+              recipe: r as Recipe,
+              expiresAt: Date.now() + PENDING_SAVES_TTL_MS,
+            }));
+        } else if (parsed && Array.isArray(parsed.recipes)) {
+          pending = parsed.recipes;
+        }
+      } catch {
+        // Invalid JSON, start fresh
+        pending = [];
+      }
+    }
+    
+    pending.push({
+      recipe,
+      expiresAt: Date.now() + PENDING_SAVES_TTL_MS,
+    });
+    
+    localStorage.setItem(PENDING_SAVES_KEY, JSON.stringify({ recipes: pending }));
   } catch {
     // best-effort
   }
@@ -258,9 +285,33 @@ export async function flushLocalSavedRecipes(): Promise<void> {
   const pendingRaw = localStorage.getItem(PENDING_SAVES_KEY);
   if (!pendingRaw) return;
 
-  let pending: Recipe[] = [];
+  let pending: { recipe: Recipe; expiresAt: number }[] = [];
   try {
-    pending = JSON.parse(pendingRaw);
+    const parsed = JSON.parse(pendingRaw);
+    if (parsed && Array.isArray(parsed.recipes)) {
+      // New format with TTL
+      const now = Date.now();
+      pending = parsed.recipes.filter((item: { recipe: Recipe; expiresAt: number }) => {
+        if (item.expiresAt < now) {
+          // Expired - don't include
+          return false;
+        }
+        return true;
+      });
+      
+      // Remove expired items from storage
+      if (pending.length !== parsed.recipes.length) {
+        localStorage.setItem(PENDING_SAVES_KEY, JSON.stringify({ recipes: pending }));
+      }
+    } else if (Array.isArray(parsed)) {
+      // Migrate old format
+      pending = parsed
+        .filter((r) => r && typeof r === "object")
+        .map((r: Recipe) => ({
+          recipe: r,
+          expiresAt: Date.now() + PENDING_SAVES_TTL_MS,
+        }));
+    }
   } catch {
     localStorage.removeItem(PENDING_SAVES_KEY);
     return;
@@ -271,7 +322,7 @@ export async function flushLocalSavedRecipes(): Promise<void> {
     return;
   }
 
-  for (const recipe of pending) {
+  for (const { recipe } of pending) {
     try {
       await request("/user/saved-recipes", {
         method: "POST",
@@ -297,6 +348,41 @@ export async function flushLocalSavedRecipes(): Promise<void> {
   }
 
   localStorage.removeItem(PENDING_SAVES_KEY);
+}
+
+/**
+ * Clean up expired pending recipes without attempting to save them.
+ * Call this on app initialization to remove stale data.
+ */
+export function cleanupExpiredPendingRecipes(): void {
+  const pendingRaw = localStorage.getItem(PENDING_SAVES_KEY);
+  if (!pendingRaw) return;
+
+  try {
+    const parsed = JSON.parse(pendingRaw);
+    if (parsed && Array.isArray(parsed.recipes)) {
+      const now = Date.now();
+      const nonExpired = parsed.recipes.filter(
+        (item: { recipe: Recipe; expiresAt: number }) => item.expiresAt >= now
+      );
+      
+      if (nonExpired.length !== parsed.recipes.length) {
+        if (nonExpired.length === 0) {
+          localStorage.removeItem(PENDING_SAVES_KEY);
+        } else {
+          localStorage.setItem(PENDING_SAVES_KEY, JSON.stringify({ recipes: nonExpired }));
+        }
+      }
+    }
+  } catch {
+    // Invalid data, just clear it
+    localStorage.removeItem(PENDING_SAVES_KEY);
+  }
+}
+
+// Auto-cleanup on module load (app initialization)
+if (typeof window !== "undefined") {
+  cleanupExpiredPendingRecipes();
 }
 
 type RecipeModelChoice = "scratch" | "finetuned" | "gemini";

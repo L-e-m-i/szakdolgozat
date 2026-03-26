@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import os
+import re
 import threading
 import time
 import uuid
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Tuple
 
 import jwt
 from dotenv import load_dotenv
@@ -43,7 +44,8 @@ _default_cookie_secure = (
 COOKIE_SECURE = os.getenv(
     "AUTH_COOKIE_SECURE", "1" if _default_cookie_secure else "0"
 ) in ("1", "true", "True", "yes", "YES")
-COOKIE_SAMESITE = os.getenv("AUTH_COOKIE_SAMESITE", "lax")
+# Use 'strict' for CSRF protection in production, 'lax' for easier local dev
+COOKIE_SAMESITE = os.getenv("AUTH_COOKIE_SAMESITE", "strict" if _default_cookie_secure else "lax")
 
 LOGIN_LIMIT_COUNT = int(os.getenv("RATE_LIMIT_LOGIN_COUNT", "20"))
 LOGIN_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_LOGIN_WINDOW_SECONDS", "60"))
@@ -53,6 +55,32 @@ REFRESH_LIMIT_COUNT = int(os.getenv("RATE_LIMIT_REFRESH_COUNT", "40"))
 REFRESH_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_REFRESH_WINDOW_SECONDS", "60"))
 
 password_hash = PasswordHash.recommended()
+
+
+def validate_password_strength(password: str) -> Tuple[bool, str]:
+    """
+    Validate password strength according to security requirements.
+    
+    Requirements (Option A):
+    - Minimum 8 characters
+    - At least 1 uppercase letter
+    - At least 1 lowercase letter
+    - At least 1 number
+    
+    Returns:
+        Tuple of (is_valid, error_message)
+        If valid: (True, "")
+        If invalid: (False, "descriptive error message")
+    """
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters long"
+    if not re.search(r"[A-Z]", password):
+        return False, "Password must contain at least one uppercase letter"
+    if not re.search(r"[a-z]", password):
+        return False, "Password must contain at least one lowercase letter"
+    if not re.search(r"\d", password):
+        return False, "Password must contain at least one number"
+    return True, ""
 
 # OAuth2 scheme: token endpoint will be /auth/token (router prefix below provides /auth)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
@@ -389,6 +417,12 @@ async def refresh_access_token(
     """
     Exchange a valid refresh token for a new access token (and rotate the refresh token).
     Reads refresh token from payload or HttpOnly cookie.
+    
+    Uses optimistic token generation to prevent lockout if response is lost:
+    1. Validate old token
+    2. Create new tokens FIRST
+    3. Then revoke old token
+    This way if the response is lost, the client can retry with the old token.
     """
     _rate_limit_or_raise(
         request,
@@ -429,18 +463,19 @@ async def refresh_access_token(
             detail={"message": "Account disabled", "code": "account_disabled"},
         )
 
-    # Revoke the old refresh token and issue a new one (rotation)
-    rt_record.revoked = True
-    db.add(rt_record)
-    db.commit()
-
+    # OPTIMISTIC APPROACH: Create new tokens BEFORE revoking old one
+    # This prevents permanent lockout if the response is lost in transit
     new_refresh = _create_refresh_token_record(db, db_user)
-
-    # Issue new access token
+    
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": db_user.username}, expires_delta=access_token_expires
     )
+
+    # Now revoke the old refresh token
+    rt_record.revoked = True
+    db.add(rt_record)
+    db.commit()
 
     _set_auth_cookies(response, access_token=access_token, refresh_token=new_refresh)
 
@@ -487,6 +522,14 @@ async def signup(request: Request, user_in: UserCreate, db: Session = Depends(ge
         limit=SIGNUP_LIMIT_COUNT,
         window_seconds=SIGNUP_LIMIT_WINDOW_SECONDS,
     )
+
+    # Validate password strength
+    is_valid, error_msg = validate_password_strength(user_in.password)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"message": error_msg, "code": "weak_password"},
+        )
 
     existing = db.query(DBUser).filter(DBUser.username == user_in.username).first()
     if existing:

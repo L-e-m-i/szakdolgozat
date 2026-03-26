@@ -59,4 +59,4 @@ EXPOSE ${PORT}
 # Default command: start uvicorn
 # For development you may want to add --reload (not recommended in production).
 # The container will pick up DATABASE_URL from environment if provided.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT

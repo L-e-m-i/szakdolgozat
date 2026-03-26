@@ -32,7 +32,7 @@ def _login(username_or_email: str, password: str):
 def test_signup_creates_user_and_returns_201() -> None:
     username = _unique_username()
     email = _unique_email()
-    password = "s3cret-pass"
+    password = "SecurePass123"  # Updated: meets password requirements (8+ chars, uppercase, lowercase, number)
 
     resp = _signup(username, email, password)
     assert resp.status_code == 201, resp.text
@@ -47,7 +47,7 @@ def test_signup_duplicate_username_returns_400_with_code() -> None:
     username = _unique_username()
     email1 = _unique_email()
     email2 = _unique_email()
-    password = "dup-pass"
+    password = "SecurePass123"  # Updated: meets password requirements
 
     r1 = _signup(username, email1, password)
     assert r1.status_code == 201, r1.text
@@ -64,7 +64,7 @@ def test_signup_duplicate_email_returns_400_with_code() -> None:
     username1 = _unique_username()
     username2 = _unique_username()
     email = _unique_email()
-    password = "dup-email-pass"
+    password = "SecurePass123"  # Updated: meets password requirements
 
     r1 = _signup(username1, email, password)
     assert r1.status_code == 201, r1.text
@@ -88,7 +88,7 @@ def test_token_exchange_refresh_and_logout_flow() -> None:
     """
     username = _unique_username()
     email = _unique_email()
-    password = "complex-pass-123"
+    password = "ComplexPass123"  # Updated: meets password requirements
 
     # signup
     r = _signup(username, email, password)
