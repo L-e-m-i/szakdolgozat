@@ -11,8 +11,9 @@ import time
 from typing import Any, Optional
 from gradio_client import Client
 from google import genai
-from google.genai import types
 logger = logging.getLogger(__name__)
+
+client = genai.Client()
 
 # =====================================================================
 # HUGGING FACE SPACES CONFIGURATION
@@ -60,10 +61,10 @@ class ModelManager:
         for attempt in range(1, ML_MODEL_MAX_RETRIES + 1):
             try:
                 logger.info(f"T5 model attempt {attempt}/{ML_MODEL_MAX_RETRIES}")
-                client = self._get_t5_client()
+                t5_model_client = self._get_t5_client()
 
                 # API call to the HF Space
-                result = client.predict(
+                result = t5_model_client.predict(
                     ingredients_text=ingredients_text,
                     api_name="/generate_recipe"
                 )
@@ -88,10 +89,10 @@ class ModelManager:
         for attempt in range(1, ML_MODEL_MAX_RETRIES + 1):
             try:
                 logger.info(f"Scratch model attempt {attempt}/{ML_MODEL_MAX_RETRIES}")
-                client = self._get_scratch_client()
+                scratch_client = self._get_scratch_client()
 
                 # API call to the Scratch HF Space (includes the forced_title param we added)
-                result = client.predict(
+                result = scratch_client.predict(
                     ingredients_text=ingredients_text,
                     api_name="/generate_scratch_recipe"
                 )
@@ -140,10 +141,6 @@ class ModelManager:
         if not api_key:
             raise RuntimeError("GEMINI_API_KEY is not configured.")
 
-        try:
-            client = genai.Client(api_key=api_key, timeout=ML_MODEL_TIMEOUT)
-        except ImportError as e:
-            raise RuntimeError("Gemini SDK is not installed.") from e
 
         model_name = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
         ingredients_text = ", ".join(ingredients).lower()
@@ -167,11 +164,12 @@ class ModelManager:
             try:
                 logger.info(f"Gemini model attempt {attempt}/{ML_MODEL_MAX_RETRIES}")
 
-                if self.gemini_model is None or self.gemini_model_name != model_name:
-                    self.gemini_model = client.GenerativeModel(model_name)
-                    self.gemini_model_name = model_name
 
-                response = self.gemini_model.generate_content(prompt)
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    timeout=ML_MODEL_TIMEOUT
+                )
                 raw_text = str(getattr(response, "text", "") or "").strip()
 
                 if not raw_text:
