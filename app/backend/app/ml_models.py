@@ -18,8 +18,8 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY", "").strip())
 # =====================================================================
 # HUGGING FACE SPACES CONFIGURATION
 # =====================================================================
-T5_SPACE_ID = "l-e-m-i/finetuned_space"
-SCRATCH_SPACE_ID = "l-e-m-i/scratch_space"
+T5_SPACE_ID = os.getenv("T5_SPACE_ID", "l-e-m-i/finetuned_space").strip()
+SCRATCH_SPACE_ID = os.getenv("SCRATCH_SPACE_ID", "l-e-m-i/scratch_space").strip()
 DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
 
 # Timeout for ML model API calls (seconds) - 2 minutes for slow models
