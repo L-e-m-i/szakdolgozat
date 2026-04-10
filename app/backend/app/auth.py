@@ -170,8 +170,35 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
 
 
 def _clear_auth_cookies(response: Response) -> None:
-    response.delete_cookie(key=AUTH_COOKIE_NAME, domain=COOKIE_DOMAIN, path="/")
-    response.delete_cookie(key=REFRESH_COOKIE_NAME, domain=COOKIE_DOMAIN, path="/auth")
+    """
+    Clear auth cookies with parameters that exactly match _set_auth_cookies().
+
+    We set max_age=0 and expires to a past date to force immediate expiration.
+    The secure, samesite, domain, and path parameters must match the set_cookie
+    calls to ensure the browser correctly identifies and removes the cookies.
+    """
+    response.set_cookie(
+        key=AUTH_COOKIE_NAME,
+        value="",
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        domain=COOKIE_DOMAIN,
+        path="/",
+        max_age=0,
+        expires="Thu, 01 Jan 1970 00:00:00 GMT",
+    )
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value="",
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        domain=COOKIE_DOMAIN,
+        path="/auth",
+        max_age=0,
+        expires="Thu, 01 Jan 1970 00:00:00 GMT",
+    )
 
 
 # --- Password helpers -----------------------------------------------------

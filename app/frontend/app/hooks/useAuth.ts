@@ -69,6 +69,7 @@ export function useAuth(options: UseAuthOptions = {}): UseAuthReturn {
   const { requireAuth = false, redirectTo = "/profile" } = options;
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hasLoggedOut, setHasLoggedOut] = useState(false);
   const navigate = useNavigate();
   const location = useLocation(); // Get location for redirect state
 
@@ -96,10 +97,20 @@ export function useAuth(options: UseAuthOptions = {}): UseAuthReturn {
   }, [requireAuth, navigate, location]);
 
   useEffect(() => {
+    // Skip loading if user has explicitly logged out
+    if (hasLoggedOut) {
+      return;
+    }
+
     loadUser();
 
     // Listen for auth change events (from login/logout actions)
-    const onAuthChanged = () => {
+    const onAuthChanged = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { loggedIn: boolean } | undefined;
+      // If the event indicates logout, skip re-loading user
+      if (detail && !detail.loggedIn) {
+        return;
+      }
       loadUser();
     };
 
@@ -107,19 +118,21 @@ export function useAuth(options: UseAuthOptions = {}): UseAuthReturn {
     return () => {
       window.removeEventListener("auth-changed", onAuthChanged);
     };
-  }, [loadUser]);
+  }, [loadUser, hasLoggedOut]);
 
   const refreshUser = useCallback(async () => {
+    if (hasLoggedOut) return;
     await loadUser();
-  }, [loadUser]);
+  }, [loadUser, hasLoggedOut]);
 
   const logout = useCallback(async () => {
+    setHasLoggedOut(true);
+    setUser(null);
     try {
       await api.logout();
     } catch (err) {
       console.error("Logout failed", err);
     } finally {
-      setUser(null);
       navigate("/", { replace: true });
     }
   }, [navigate]);
