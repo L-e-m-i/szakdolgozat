@@ -152,7 +152,8 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
         value=access_token,
         httponly=True,
         secure=COOKIE_SECURE,
-        samesite=COOKIE_SAMESITE,
+        samesite="none",
+        partitioned=True,
         domain=COOKIE_DOMAIN,
         path="/",
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
@@ -162,7 +163,8 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
         value=refresh_token,
         httponly=True,
         secure=COOKIE_SECURE,
-        samesite=COOKIE_SAMESITE,
+        samesite="none",
+        partitioned=True,
         domain=COOKIE_DOMAIN,
         path="/auth",
         max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
@@ -174,15 +176,17 @@ def _clear_auth_cookies(response: Response) -> None:
     Clear auth cookies with parameters that exactly match _set_auth_cookies().
 
     We set max_age=0 and expires to a past date to force immediate expiration.
-    The secure, samesite, domain, and path parameters must match the set_cookie
-    calls to ensure the browser correctly identifies and removes the cookies.
+    The secure, samesite, domain, path, and partitioned parameters must match
+    the set_cookie calls to ensure the browser correctly identifies and removes
+    the cookies.
     """
     response.set_cookie(
         key=AUTH_COOKIE_NAME,
         value="",
         httponly=True,
         secure=COOKIE_SECURE,
-        samesite=COOKIE_SAMESITE,
+        samesite="none",
+        partitioned=True,
         domain=COOKIE_DOMAIN,
         path="/",
         max_age=0,
@@ -193,7 +197,8 @@ def _clear_auth_cookies(response: Response) -> None:
         value="",
         httponly=True,
         secure=COOKIE_SECURE,
-        samesite=COOKIE_SAMESITE,
+        samesite="none",
+        partitioned=True,
         domain=COOKIE_DOMAIN,
         path="/auth",
         max_age=0,
@@ -519,7 +524,7 @@ async def logout(request: Request, response: Response, payload: dict | None = No
     """
     Revoke a refresh token (logout). Payload: { "refresh_token": "<token>" }
     """
-    token_str = payload.get("refresh_token") if isinstance(payload, dict) else None
+    token_str = (payload or {}).get("refresh_token")
     if not token_str:
         token_str = request.cookies.get(REFRESH_COOKIE_NAME)
     if not token_str:
