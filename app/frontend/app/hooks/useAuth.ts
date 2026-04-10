@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useLocation } from "react-router";
 import api from "../services/api";
 
@@ -71,7 +71,14 @@ export function useAuth(options: UseAuthOptions = {}): UseAuthReturn {
   const [loading, setLoading] = useState(true);
   const [hasLoggedOut, setHasLoggedOut] = useState(false);
   const navigate = useNavigate();
-  const location = useLocation(); // Get location for redirect state
+  const locationRef = useRef(useLocation());
+  const navigateRef = useRef(navigate);
+  const requireAuthRef = useRef(requireAuth);
+
+  // Keep refs up-to-date
+  locationRef.current = useLocation();
+  navigateRef.current = navigate;
+  requireAuthRef.current = requireAuth;
 
   const loadUser = useCallback(async () => {
     try {
@@ -79,22 +86,26 @@ export function useAuth(options: UseAuthOptions = {}): UseAuthReturn {
       if (u && u.username) {
         const normalizedUser = normalizeUser(u);
         setUser(normalizedUser);
-        setLoading(false);  // Always set loading to false when user is found
+        setLoading(false);
       } else {
         setUser(null);
-        setLoading(false);  // Set loading to false before redirect
-        if (requireAuth) {
-          navigate("/login", { state: { from: location.pathname } });
+        setLoading(false);
+        if (requireAuthRef.current) {
+          navigateRef.current("/login", {
+            state: { from: locationRef.current.pathname },
+          });
         }
       }
     } catch {
       setUser(null);
-      setLoading(false);  // Set loading to false before redirect
-      if (requireAuth) {
-        navigate("/login", { state: { from: location.pathname } });
+      setLoading(false);
+      if (requireAuthRef.current) {
+        navigateRef.current("/login", {
+          state: { from: locationRef.current.pathname },
+        });
       }
     }
-  }, [requireAuth, navigate, location]);
+  }, []);
 
   useEffect(() => {
     // Skip loading if user has explicitly logged out
@@ -105,12 +116,10 @@ export function useAuth(options: UseAuthOptions = {}): UseAuthReturn {
     loadUser();
 
     // Listen for auth change events (from login/logout actions)
-    const onAuthChanged = (event: Event) => {
-      const detail = (event as CustomEvent).detail as { loggedIn: boolean } | undefined;
-      // If the event indicates logout, skip re-loading user
-      if (detail && !detail.loggedIn) {
-        return;
-      }
+    const onAuthChanged = () => {
+      // Always re-fetch user state from backend on auth change.
+      // This ensures the Header and all other useAuth instances
+      // reliably reflect the current auth status.
       loadUser();
     };
 
