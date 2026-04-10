@@ -77,9 +77,8 @@ export default function Login() {
       }
 
       setSuccess("Successfully logged in. Redirecting...");
-      setTimeout(() => {
-        navigate(fromPath, { replace: true });
-      }, 600);
+      navigate(fromPath, { replace: true });
+      
     } catch (err: any) {
       const normalized = formatApiError(err);
       setError({
