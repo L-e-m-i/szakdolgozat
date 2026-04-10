@@ -145,30 +145,54 @@ def _rate_limit_or_raise(request: Request, scope: str, limit: int, window_second
         q.append(now)
 
 
+def _build_cookie_header(
+    key: str,
+    value: str,
+    *,
+    path: str,
+    max_age: int,
+    secure: bool = True,
+) -> str:
+    """Build a Set-Cookie header string with the Partitioned attribute.
+
+    Workaround for Starlette not supporting partitioned=True on Python < 3.14.
+    """
+    parts = [f"{key}={value}"]
+    parts.append("HttpOnly")
+    if secure:
+        parts.append("Secure")
+    parts.append(f"Path={path}")
+    parts.append("SameSite=None")
+    parts.append("Partitioned")
+    parts.append(f"Max-Age={max_age}")
+    return "; ".join(parts)
+
+
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
     """Set secure auth cookies so frontend JS does not need token access."""
-    response.set_cookie(
-        key=AUTH_COOKIE_NAME,
-        value=access_token,
-        httponly=True,
-        secure=COOKIE_SECURE,
-        samesite="none",
-        partitioned=True,
-        domain=COOKIE_DOMAIN,
+    if COOKIE_DOMAIN:
+        domain_suffix = f"; Domain={COOKIE_DOMAIN}"
+    else:
+        domain_suffix = ""
+
+    access_cookie = _build_cookie_header(
+        AUTH_COOKIE_NAME,
+        access_token,
         path="/",
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-    )
-    response.set_cookie(
-        key=REFRESH_COOKIE_NAME,
-        value=refresh_token,
-        httponly=True,
         secure=COOKIE_SECURE,
-        samesite="none",
-        partitioned=True,
-        domain=COOKIE_DOMAIN,
+    ) + domain_suffix
+
+    refresh_cookie = _build_cookie_header(
+        REFRESH_COOKIE_NAME,
+        refresh_token,
         path="/auth",
         max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
-    )
+        secure=COOKIE_SECURE,
+    ) + domain_suffix
+
+    response.headers.append("Set-Cookie", access_cookie)
+    response.headers.append("Set-Cookie", refresh_cookie)
 
 
 def _clear_auth_cookies(response: Response) -> None:
@@ -180,30 +204,29 @@ def _clear_auth_cookies(response: Response) -> None:
     the set_cookie calls to ensure the browser correctly identifies and removes
     the cookies.
     """
-    response.set_cookie(
-        key=AUTH_COOKIE_NAME,
-        value="",
-        httponly=True,
-        secure=COOKIE_SECURE,
-        samesite="none",
-        partitioned=True,
-        domain=COOKIE_DOMAIN,
+    if COOKIE_DOMAIN:
+        domain_suffix = f"; Domain={COOKIE_DOMAIN}"
+    else:
+        domain_suffix = ""
+
+    access_cookie = _build_cookie_header(
+        AUTH_COOKIE_NAME,
+        "",
         path="/",
         max_age=0,
-        expires="Thu, 01 Jan 1970 00:00:00 GMT",
-    )
-    response.set_cookie(
-        key=REFRESH_COOKIE_NAME,
-        value="",
-        httponly=True,
         secure=COOKIE_SECURE,
-        samesite="none",
-        partitioned=True,
-        domain=COOKIE_DOMAIN,
+    ) + "; Expires=Thu, 01 Jan 1970 00:00:00 GMT" + domain_suffix
+
+    refresh_cookie = _build_cookie_header(
+        REFRESH_COOKIE_NAME,
+        "",
         path="/auth",
         max_age=0,
-        expires="Thu, 01 Jan 1970 00:00:00 GMT",
-    )
+        secure=COOKIE_SECURE,
+    ) + "; Expires=Thu, 01 Jan 1970 00:00:00 GMT" + domain_suffix
+
+    response.headers.append("Set-Cookie", access_cookie)
+    response.headers.append("Set-Cookie", refresh_cookie)
 
 
 # --- Password helpers -----------------------------------------------------
