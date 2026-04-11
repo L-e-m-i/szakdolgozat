@@ -323,6 +323,17 @@ export function ProfileDetails({
           </>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+            {/* Hidden username field for password manager accessibility */}
+            <input
+              type="text"
+              name="username"
+              value={user.username}
+              readOnly
+              tabIndex={-1}
+              aria-hidden="true"
+              className="hidden"
+            />
+
             {/* Current password — required */}
             <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
               <label
