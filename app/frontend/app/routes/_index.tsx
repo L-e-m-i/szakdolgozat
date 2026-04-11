@@ -167,7 +167,7 @@ export default function Index() {
                 htmlFor="model-finetuned"
                 className="ml-3 cursor-pointer text-gray-700"
               >
-                <span className="font-medium">Fine-tuned Model (Recommended)</span>
+                <span className="font-medium">Fine-tuned Model</span>
                 <p className="text-sm text-gray-500">
                   Pre-trained T5 model, optimized for recipes
                 </p>
