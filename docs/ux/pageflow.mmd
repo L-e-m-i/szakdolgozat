@@ -1,0 +1,19 @@
+graph TD
+    %% Képernyők (Node-ok) definíciója
+    S01["▶ 🔒 S01 - Bejelentkezés / Regisztráció"]
+    S02["S02 - Főoldal (Receptgenerátor)"]
+    S03["S03 - Generált recept nézet"]
+    S04["S04 - Profil és Mentett receptek"]
+    S05["S05 - Mentett recept megtekintése / Törlése"]
+
+    %% Átjárók (Élek) és az azokat indító események
+    S01 -- "Sikeres hitelesítés (Login gomb)" --> S02
+    S02 -- "Kijelentkezés (Navigáció)" --> S01
+    
+    S02 -- "'Generate' gomb (Aszinkron AI hívás)" --> S03
+    S03 -- "Vissza a főoldalra gomb" --> S02
+    S03 -- "Recept mentése gomb" --> S04
+    
+    S02 -- "Profil menüpont" --> S04
+    S04 -- "Kattintás egy mentett receptre" --> S05
+    S05 -- "Törlés gomb vagy Vissza" --> S04
