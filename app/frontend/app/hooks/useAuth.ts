@@ -27,6 +27,8 @@ export interface UseAuthReturn {
   refreshUser: () => Promise<void>;
   /** Logout user and clear state */
   logout: () => Promise<void>;
+  /** Update the user's profile fields and refresh local state */
+  updateUser: (data: { full_name?: string; email?: string; password?: string }) => Promise<void>;
 }
 
 /**
@@ -146,12 +148,23 @@ export function useAuth(options: UseAuthOptions = {}): UseAuthReturn {
     }
   }, [navigate]);
 
+  const updateUser = useCallback(
+    async (data: { full_name?: string; email?: string; password?: string }) => {
+      const updated = await api.updateUser(data);
+      if (updated && updated.username) {
+        setUser(normalizeUser(updated));
+      }
+    },
+    [],
+  );
+
   return {
     user,
     loading,
     isAuthenticated: !!user,
     refreshUser,
     logout,
+    updateUser,
   };
 }
 

@@ -119,6 +119,13 @@ class UserCreate(BaseModel):
     full_name: Optional[str] = None
 
 
+class UserUpdate(BaseModel):
+    """Fields the user is allowed to update on their own profile."""
+    full_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
+
+
 class UserInDB(User):
     hashed_password: str
 
@@ -624,6 +631,53 @@ async def signup(request: Request, user_in: UserCreate, db: Session = Depends(ge
 async def read_users_me(current_user: User = Depends(get_current_active_user)):
     """Return the currently authenticated user (from DB)."""
     return current_user
+
+
+@router.put("/users/me/", response_model=User)
+async def update_users_me(
+    payload: UserUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Update the currently authenticated user's profile."""
+    db_user = db.query(DBUser).filter(DBUser.username == current_user.username).first()
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": "User not found", "code": "user_not_found"},
+        )
+
+    if payload.email is not None and payload.email != db_user.email:
+        existing = db.query(DBUser).filter(DBUser.email == payload.email).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"message": "Email already registered", "code": "email_exists"},
+            )
+        db_user.email = payload.email
+
+    if payload.full_name is not None:
+        db_user.full_name = payload.full_name or None
+
+    if payload.password is not None:
+        is_valid, error_msg = validate_password_strength(payload.password)
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"message": error_msg, "code": "weak_password"},
+            )
+        db_user.password_hash = get_password_hash(payload.password)
+
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+
+    return User(
+        username=db_user.username,
+        email=db_user.email,
+        full_name=db_user.full_name,
+        disabled=not bool(getattr(db_user, "is_active", True)),
+    )
 
 
 @router.get("/users/me/items/")

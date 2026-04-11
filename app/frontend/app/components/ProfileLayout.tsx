@@ -20,6 +20,9 @@ export interface ProfileLayoutProps {
   user: ApiUser;
   savedRecipes?: ApiRecipe[];
   initialView?: "profile" | "recipes";
+  onUpdateProfile?: (
+    data: { full_name?: string; email?: string; password?: string },
+  ) => Promise<void>;
 }
 
 /**
@@ -33,6 +36,7 @@ export default function ProfileLayout({
   user,
   savedRecipes = [],
   initialView = "profile",
+  onUpdateProfile,
 }: ProfileLayoutProps) {
   const [activeView, setActiveView] = useState<"profile" | "recipes">(
     initialView,
@@ -96,7 +100,10 @@ export default function ProfileLayout({
         {/* Content area */}
         <main className="md:w-3/4">
           {activeView === "profile" ? (
-            <ProfileDetails user={user} />
+            <ProfileDetails
+              user={user}
+              onUpdate={onUpdateProfile ?? (() => Promise.resolve())}
+            />
           ) : (
             <SavedRecipesList recipes={savedRecipes} />
           )}
@@ -109,10 +116,76 @@ export default function ProfileLayout({
 /**
  * ProfileDetails
  *
- * Simple component that renders user information.
- * Kept separate so pages can import it individually if desired.
+ * Displays user information with an inline edit form to update
+ * full name, email, and optionally password.
  */
-export function ProfileDetails({ user }: { user: ApiUser }) {
+export function ProfileDetails({
+  user,
+  onUpdate,
+}: {
+  user: ApiUser;
+  onUpdate: (data: { full_name?: string; email?: string; password?: string }) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [fullName, setFullName] = useState(user.full_name ?? "");
+  const [email, setEmail] = useState(user.email ?? "");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Sync local state when user prop changes
+  useEffect(() => {
+    setFullName(user.full_name ?? "");
+    setEmail(user.email ?? "");
+    setPassword("");
+    setShowPassword(false);
+    setSuccess(null);
+    setError(null);
+    setEditing(false);
+  }, [user]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+
+    const payload: { full_name?: string; email?: string; password?: string } = {};
+    if (fullName.trim() !== user.full_name) payload.full_name = fullName.trim() || undefined;
+    if (email.trim() !== user.email) payload.email = email.trim();
+    if (password) payload.password = password;
+
+    if (Object.keys(payload).length === 0) {
+      setSuccess("No changes to save.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await onUpdate(payload);
+      setSuccess("Profile updated successfully.");
+      setEditing(false);
+      setPassword("");
+    } catch (err: any) {
+      const msg =
+        err?.detail?.message || err?.message || "Failed to update profile.";
+      setError(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setEditing(false);
+    setFullName(user.full_name ?? "");
+    setEmail(user.email ?? "");
+    setPassword("");
+    setShowPassword(false);
+    setSuccess(null);
+    setError(null);
+  };
+
   return (
     <section aria-labelledby="profile-heading">
       <h1
@@ -125,36 +198,132 @@ export function ProfileDetails({ user }: { user: ApiUser }) {
       <div className="p-6 bg-white border border-gray-200 rounded-lg shadow-sm">
         <h2 className="text-2xl font-semibold text-gray-700 mb-4">Profile Details</h2>
 
-        <div className="grid grid-cols-1 gap-3 text-gray-600">
-          <div>
-            <p className="text-sm text-gray-500">Username</p>
-            <p className="font-medium text-gray-800">
-              {user.username}
-            </p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-500">Name</p>
-            {user.full_name ?
-              <p className="font-medium text-gray-800">
-                {user.full_name }
-              </p>
-            : <p className="font-medium text-gray-800 italic">
-                No name provided
-              </p>
-            }
-          </div>
+        {success && (
+          <p className="mb-4 px-4 py-2 bg-green-50 border border-green-200 rounded text-green-700 text-sm">
+            {success}
+          </p>
+        )}
+        {error && (
+          <p className="mb-4 px-4 py-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+            {error}
+          </p>
+        )}
 
-          <div>
-            <p className="text-sm text-gray-500">Email Address</p>
-            <p className="font-medium text-gray-800">{user.email}</p>
-          </div>
-        </div>
+        {!editing ? (
+          <>
+            <div className="grid grid-cols-1 gap-3 text-gray-600">
+              <div>
+                <p className="text-sm text-gray-500">Username</p>
+                <p className="font-medium text-gray-800">{user.username}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Name</p>
+                {user.full_name ? (
+                  <p className="font-medium text-gray-800">{user.full_name}</p>
+                ) : (
+                  <p className="font-medium text-gray-800 italic">No name provided</p>
+                )}
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Email Address</p>
+                <p className="font-medium text-gray-800">{user.email}</p>
+              </div>
+            </div>
 
-        <div className="mt-6">
-          <button className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer">
-            Edit Profile
-          </button>
-        </div>
+            <div className="mt-6">
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
+              >
+                Edit Profile
+              </button>
+            </div>
+          </>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+            <div>
+              <label htmlFor="edit-username" className="block text-sm text-gray-500 mb-1">
+                Username
+              </label>
+              <p className="font-medium text-gray-800">{user.username}</p>
+            </div>
+
+            <div>
+              <label htmlFor="edit-fullname" className="block text-sm text-gray-500 mb-1">
+                Name
+              </label>
+              <input
+                id="edit-fullname"
+                type="text"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="Your full name"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="edit-email" className="block text-sm text-gray-500 mb-1">
+                Email Address
+              </label>
+              <input
+                id="edit-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="edit-password" className="block text-sm text-gray-500 mb-1">
+                New Password{" "}
+                <span className="text-gray-400">(leave blank to keep current)</span>
+              </label>
+              <div className="flex gap-2">
+                <input
+                  id="edit-password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  minLength={8}
+                  placeholder="Min. 8 characters"
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((p) => !p)}
+                  className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50 cursor-pointer"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+              </div>
+              {password && password.length < 8 && (
+                <p className="text-xs text-red-600 mt-1">Password must be at least 8 characters</p>
+              )}
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                {saving ? "Saving..." : "Save Changes"}
+              </button>
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </section>
   );

@@ -242,7 +242,18 @@ export async function refreshAccessToken(): Promise<void> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({}),
   });
+}
 
+export async function updateUser(data: {
+  full_name?: string;
+  email?: string;
+  password?: string;
+}) {
+  return request<components["schemas"]["User"]>("/auth/users/me/", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
 }
 
 function savePendingRecipeLocally(recipe: Recipe) {
@@ -479,6 +490,7 @@ export default {
   login,
   logout,
   refreshAccessToken,
+  updateUser,
   flushLocalSavedRecipes,
   formatApiError,
   getCurrentUser: async function (): Promise<{

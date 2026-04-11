@@ -19,7 +19,7 @@ export default function Profile() {
   const location = useLocation();
   
   // Use centralized auth hook with auto-redirect to login
-  const { user, loading: authLoading, isAuthenticated } = useAuth({ requireAuth: true });
+  const { user, loading: authLoading, isAuthenticated, updateUser } = useAuth({ requireAuth: true });
   
   const [savedRecipes, setSavedRecipes] = useState<ApiRecipe[] | undefined>(
     undefined,
@@ -93,6 +93,7 @@ export default function Profile() {
       user={user}
       savedRecipes={savedRecipes}
       initialView="profile"
+      onUpdateProfile={updateUser}
     />
   );
 }
