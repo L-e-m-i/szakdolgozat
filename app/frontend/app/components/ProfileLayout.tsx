@@ -21,7 +21,12 @@ export interface ProfileLayoutProps {
   savedRecipes?: ApiRecipe[];
   initialView?: "profile" | "recipes";
   onUpdateProfile?: (
-    data: { full_name?: string; email?: string; password?: string },
+    data: {
+      current_password: string;
+      full_name?: string;
+      email?: string;
+      new_password?: string;
+    },
   ) => Promise<void>;
 }
 
@@ -118,19 +123,29 @@ export default function ProfileLayout({
  *
  * Displays user information with an inline edit form to update
  * full name, email, and optionally password.
+ * Requires current password for any change.
  */
 export function ProfileDetails({
   user,
   onUpdate,
 }: {
   user: ApiUser;
-  onUpdate: (data: { full_name?: string; email?: string; password?: string }) => Promise<void>;
+  onUpdate: (data: {
+    current_password: string;
+    full_name?: string;
+    email?: string;
+    new_password?: string;
+  }) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
   const [fullName, setFullName] = useState(user.full_name ?? "");
   const [email, setEmail] = useState(user.email ?? "");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -139,25 +154,65 @@ export function ProfileDetails({
   useEffect(() => {
     setFullName(user.full_name ?? "");
     setEmail(user.email ?? "");
-    setPassword("");
-    setShowPassword(false);
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setShowCurrent(false);
+    setShowNew(false);
+    setShowConfirm(false);
     setSuccess(null);
     setError(null);
     setEditing(false);
   }, [user]);
+
+  const hasChanges = () => {
+    return (
+      fullName.trim() !== (user.full_name ?? "") ||
+      email.trim() !== (user.email ?? "") ||
+      newPassword.length > 0
+    );
+  };
+
+  const passwordsMatch = newPassword.length === 0 || newPassword === confirmPassword;
+  const currentPasswordValid = currentPassword.length > 0;
+  const newPasswordValid = newPassword.length === 0 || newPassword.length >= 8;
+  const canSubmit =
+    currentPasswordValid &&
+    passwordsMatch &&
+    newPasswordValid &&
+    hasChanges();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccess(null);
 
-    const payload: { full_name?: string; email?: string; password?: string } = {};
-    if (fullName.trim() !== user.full_name) payload.full_name = fullName.trim() || undefined;
-    if (email.trim() !== user.email) payload.email = email.trim();
-    if (password) payload.password = password;
+    const payload: {
+      current_password: string;
+      full_name?: string;
+      email?: string;
+      new_password?: string;
+    } = {
+      current_password: currentPassword,
+    };
 
-    if (Object.keys(payload).length === 0) {
+    if (fullName.trim() !== (user.full_name ?? "")) {
+      payload.full_name = fullName.trim() || undefined;
+    }
+    if (email.trim() !== (user.email ?? "")) {
+      payload.email = email.trim();
+    }
+    if (newPassword.length > 0) {
+      payload.new_password = newPassword;
+    }
+
+    if (!hasChanges()) {
       setSuccess("No changes to save.");
+      return;
+    }
+
+    if (newPassword.length > 0 && newPassword !== confirmPassword) {
+      setError("New passwords do not match.");
       return;
     }
 
@@ -166,7 +221,9 @@ export function ProfileDetails({
       await onUpdate(payload);
       setSuccess("Profile updated successfully.");
       setEditing(false);
-      setPassword("");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
     } catch (err: any) {
       const msg =
         err?.detail?.message || err?.message || "Failed to update profile.";
@@ -180,11 +237,35 @@ export function ProfileDetails({
     setEditing(false);
     setFullName(user.full_name ?? "");
     setEmail(user.email ?? "");
-    setPassword("");
-    setShowPassword(false);
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setShowCurrent(false);
+    setShowNew(false);
+    setShowConfirm(false);
     setSuccess(null);
     setError(null);
   };
+
+  // Small inline toggle button for password visibility
+  const ToggleBtn = ({
+    visible,
+    onToggle,
+    label,
+  }: {
+    visible: boolean;
+    onToggle: () => void;
+    label: string;
+  }) => (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50 cursor-pointer shrink-0"
+      aria-label={visible ? `Hide ${label}` : `Show ${label}`}
+    >
+      {visible ? "Hide" : "Show"}
+    </button>
+  );
 
   return (
     <section aria-labelledby="profile-heading">
@@ -242,6 +323,34 @@ export function ProfileDetails({
           </>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+            {/* Current password — required */}
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <label
+                htmlFor="edit-current-password"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                Current Password <span className="text-red-500">*</span>
+              </label>
+              <div className="flex gap-2">
+                <input
+                  id="edit-current-password"
+                  type={showCurrent ? "text" : "password"}
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                  placeholder="Enter your current password"
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                />
+                <ToggleBtn
+                  visible={showCurrent}
+                  onToggle={() => setShowCurrent((p) => !p)}
+                  label="current password"
+                />
+              </div>
+            </div>
+
+            {/* Read-only username */}
             <div>
               <label htmlFor="edit-username" className="block text-sm text-gray-500 mb-1">
                 Username
@@ -249,6 +358,7 @@ export function ProfileDetails({
               <p className="font-medium text-gray-800">{user.username}</p>
             </div>
 
+            {/* Full name */}
             <div>
               <label htmlFor="edit-fullname" className="block text-sm text-gray-500 mb-1">
                 Name
@@ -263,6 +373,7 @@ export function ProfileDetails({
               />
             </div>
 
+            {/* Email */}
             <div>
               <label htmlFor="edit-email" className="block text-sm text-gray-500 mb-1">
                 Email Address
@@ -277,39 +388,72 @@ export function ProfileDetails({
               />
             </div>
 
-            <div>
-              <label htmlFor="edit-password" className="block text-sm text-gray-500 mb-1">
-                New Password{" "}
-                <span className="text-gray-400">(leave blank to keep current)</span>
-              </label>
-              <div className="flex gap-2">
-                <input
-                  id="edit-password"
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  minLength={8}
-                  placeholder="Min. 8 characters"
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((p) => !p)}
-                  className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50 cursor-pointer"
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                >
-                  {showPassword ? "Hide" : "Show"}
-                </button>
+            {/* New password */}
+            <div className="pt-2 border-t border-gray-100">
+              <h3 className="text-sm font-medium text-gray-700 mb-3">
+                Change Password{" "}
+                <span className="text-gray-400 font-normal">(optional)</span>
+              </h3>
+
+              <div className="space-y-3">
+                <div>
+                  <label htmlFor="edit-new-password" className="block text-sm text-gray-500 mb-1">
+                    New Password
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      id="edit-new-password"
+                      type={showNew ? "text" : "password"}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      minLength={8}
+                      placeholder="Min. 8 characters"
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                    />
+                    <ToggleBtn
+                      visible={showNew}
+                      onToggle={() => setShowNew((p) => !p)}
+                      label="new password"
+                    />
+                  </div>
+                  {newPassword && newPassword.length < 8 && (
+                    <p className="text-xs text-red-600 mt-1">Must be at least 8 characters</p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="edit-confirm-password" className="block text-sm text-gray-500 mb-1">
+                    Confirm New Password
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      id="edit-confirm-password"
+                      type={showConfirm ? "text" : "password"}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Re-enter new password"
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                    />
+                    <ToggleBtn
+                      visible={showConfirm}
+                      onToggle={() => setShowConfirm((p) => !p)}
+                      label="confirm password"
+                    />
+                  </div>
+                  {confirmPassword && !passwordsMatch && (
+                    <p className="text-xs text-red-600 mt-1">Passwords do not match</p>
+                  )}
+                  {confirmPassword && passwordsMatch && confirmPassword.length > 0 && (
+                    <p className="text-xs text-green-600 mt-1">Passwords match</p>
+                  )}
+                </div>
               </div>
-              {password && password.length < 8 && (
-                <p className="text-xs text-red-600 mt-1">Password must be at least 8 characters</p>
-              )}
             </div>
 
             <div className="flex gap-3 pt-2">
               <button
                 type="submit"
-                disabled={saving}
+                disabled={saving || !canSubmit}
                 className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
                 {saving ? "Saving..." : "Save Changes"}

@@ -245,9 +245,10 @@ export async function refreshAccessToken(): Promise<void> {
 }
 
 export async function updateUser(data: {
+  current_password: string;
   full_name?: string;
   email?: string;
-  password?: string;
+  new_password?: string;
 }) {
   return request<components["schemas"]["User"]>("/auth/users/me/", {
     method: "PUT",

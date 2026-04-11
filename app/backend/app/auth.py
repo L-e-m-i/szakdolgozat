@@ -120,10 +120,15 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    """Fields the user is allowed to update on their own profile."""
+    """Fields the user is allowed to update on their own profile.
+
+    current_password is required for any profile update (security measure).
+    new_password is optional — if provided, it must pass strength validation.
+    """
+    current_password: str
     full_name: Optional[str] = None
     email: Optional[EmailStr] = None
-    password: Optional[str] = None
+    new_password: Optional[str] = None
 
 
 class UserInDB(User):
@@ -639,12 +644,22 @@ async def update_users_me(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    """Update the currently authenticated user's profile."""
+    """Update the currently authenticated user's profile.
+
+    The user must provide their current password to authorize any change.
+    """
     db_user = db.query(DBUser).filter(DBUser.username == current_user.username).first()
     if not db_user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"message": "User not found", "code": "user_not_found"},
+        )
+
+    # Verify current password before allowing any changes
+    if not verify_password(payload.current_password, db_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"message": "Current password is incorrect", "code": "invalid_password"},
         )
 
     if payload.email is not None and payload.email != db_user.email:
@@ -659,14 +674,14 @@ async def update_users_me(
     if payload.full_name is not None:
         db_user.full_name = payload.full_name or None
 
-    if payload.password is not None:
-        is_valid, error_msg = validate_password_strength(payload.password)
+    if payload.new_password is not None:
+        is_valid, error_msg = validate_password_strength(payload.new_password)
         if not is_valid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"message": error_msg, "code": "weak_password"},
             )
-        db_user.password_hash = get_password_hash(payload.password)
+        db_user.password_hash = get_password_hash(payload.new_password)
 
     db.add(db_user)
     db.commit()
