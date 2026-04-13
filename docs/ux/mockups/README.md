@@ -1,0 +1,1 @@
+A végleges UI többnyire követi a mockupokat. A több modell használata miatt ki kellett egészíteni az elemeket. Néhány elem át lett rendezve, hogy jobb UX-et biztosítson illetve a színpaletta akkor még nem volt meghatározva, így a színek is változtak. 

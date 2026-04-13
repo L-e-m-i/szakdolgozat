@@ -1,19 +1,37 @@
 graph TD
     %% Képernyők (Node-ok) definíciója
-    S01["▶ 🔒 S01 - Bejelentkezés / Regisztráció"]
-    S02["S02 - Főoldal (Receptgenerátor)"]
-    S03["S03 - Generált recept nézet"]
-    S04["S04 - Profil és Mentett receptek"]
-    S05["S05 - Mentett recept megtekintése / Törlése"]
+    S01["▶ 🔒 S01 - Bejelentkezés"]
+    S02["🔒 S02 - Regisztráció"]
+    S03["S03 - Főoldal (Receptgenerátor)"]
+    S04["S04 - Generált recept nézet"]
+    S05["S05 - Profil"]
+    S06["S06 - Mentett receptek oldal"]
+    S07["S07 - Mentett recept részletei"]
+    S08["S08 - Profil szerkesztése"]
 
     %% Átjárók (Élek) és az azokat indító események
-    S01 -- "Sikeres hitelesítés (Login gomb)" --> S02
-    S02 -- "Kijelentkezés (Navigáció)" --> S01
     
-    S02 -- "'Generate' gomb (Aszinkron AI hívás)" --> S03
-    S03 -- "Vissza a főoldalra gomb" --> S02
-    S03 -- "Recept mentése gomb" --> S04
+    %% Hitelesítési folyamatok
+    S01 -- "'Még nincs fiókom' link" --> S02
+    S02 -- "'Már van fiókom' link" --> S01
+    S01 -- "Sikeres bejelentkezés" --> S03
+    S02 -- "Sikeres regisztráció" --> S03
     
-    S02 -- "Profil menüpont" --> S04
-    S04 -- "Kattintás egy mentett receptre" --> S05
-    S05 -- "Törlés gomb vagy Vissza" --> S04
+    %% Fő navigáció (Navbar-ból elérhető)
+    S03 -- "Kijelentkezés" --> S01
+    S03 -- "Profil menüpont" --> S05
+    S03 -- "Mentett receptek menü" --> S06
+    
+    %% Generálási folyamat
+    S03 -- "'Generate' gomb (Aszinkron hívás)" --> S04
+    S04 -- "Vissza a főoldalra gomb" --> S03
+    S04 -- "Recept mentése gomb" --> S06
+    
+    %% Mentett receptek kezelése
+    S05 -- "Mentett receptek megtekintése" --> S06
+    S06 -- "Kattintás egy mentett receptre" --> S07
+    S07 -- "Törlés gomb vagy Vissza" --> S06
+    
+    %% Profil szerkesztése
+    S05 -- "Adatok módosítása gomb" --> S08
+    S08 -- "Mentés vagy Mégsem gomb" --> S05
