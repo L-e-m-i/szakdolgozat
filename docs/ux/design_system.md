@@ -17,7 +17,6 @@ Az oldal-komponensek a `app/frontend/app/routes/` mappában vannak, file-alapú 
 
 A színek a Tailwind CSS v4 default palettából származnak. A v4 belsőleg **OKLCH színteret** használ, ami perceptuálisan egyenletesebb színeket eredményez. Az alábbi táblázat az OKLCH értékeket és a Tailwind v4 hivatalos tokenekből sRGB-re konvertált hex kódokat tartalmazza.
 
-> **Megjegyzés:** A Tailwind v4 OKLCH-alapú színei sRGB-re konvertálva eltérnek a v3-as palettától. A böngészők, amelyek natívan támogatják az OKLCH-t (Chrome 119+, Safari 15+, Firefox 113+), az eredeti OKLCH színt jelenítik meg. A régebbi böngészők sRGB fallback-et használnak.
 
 | Szerep | Tailwind class | OKLCH | Közelítő sRGB hex | Használat |
 |--------|---------------|-------|-------------------|-----------|
