@@ -4,7 +4,6 @@
 
 | # | Fájl | Leírás |
 |---|------|--------|
-| 1 | [pageflow.png](./pageflow.png) | Képernyő-térkép — az összes képernyő és a köztük lévő navigáció |
 | 1 | [pageflow.mmd](./pageflow.mmd) | A pageflow szerkeszthető Mermaid forrása |
 | 2 | [screenshots/](./screenshots/) | Képernyőképek minden egyedi képernyőről (S01–S08) |
 | 3 | [screens.md](./screens.md) | Képernyő-leírás táblázat — minden képernyő részletes specifikációja |
