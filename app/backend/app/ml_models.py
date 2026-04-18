@@ -212,6 +212,8 @@ class ModelManager:
             steps_raw = data.get("steps", "")
             if isinstance(steps_raw, list):
                 steps = steps_raw
+            elif model_name == "scratch" and "," in str(steps_raw):
+                steps = [s.strip(" .") for s in str(steps_raw).split(",") if s.strip()]
             elif ";" in str(steps_raw):
                 steps = [s.strip(" .") for s in steps_raw.split(";") if s.strip()]
             else:
@@ -278,7 +280,9 @@ class ModelManager:
         steps: list[str] = []
         steps_raw = _extract("steps")
         if steps_raw:
-            if ";" in steps_raw:
+            if model_name == "scratch" and "," in steps_raw:
+                steps = [s.strip(" .") for s in steps_raw.split(",") if s.strip()]
+            elif ";" in steps_raw:
                 steps = [s.strip(" .") for s in steps_raw.split(";") if s.strip()]
             else:
                 steps = [line.lstrip("0123456789.-) •").strip() for line in steps_raw.splitlines() if line.strip()]
