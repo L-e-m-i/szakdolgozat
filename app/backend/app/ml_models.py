@@ -135,6 +135,33 @@ class ModelManager:
         except json.JSONDecodeError:
             return None
 
+    def _dedupe_ingredients(self, ingredients: list[dict[str, str]]) -> list[dict[str, str]]:
+        """Remove duplicate ingredients by name while preserving order."""
+        unique: list[dict[str, str]] = []
+        seen_names: set[str] = set()
+
+        for ingredient in ingredients:
+            if not isinstance(ingredient, dict):
+                continue
+
+            name = str(ingredient.get("name", "")).strip()
+            if not name:
+                continue
+
+            key = name.casefold()
+            if key in seen_names:
+                continue
+
+            cleaned: dict[str, str] = {"name": name}
+            amount = ingredient.get("amount")
+            if amount is not None and str(amount).strip():
+                cleaned["amount"] = str(amount).strip()
+
+            unique.append(cleaned)
+            seen_names.add(key)
+
+        return unique
+
     def generate_recipe_with_gemini(self, ingredients: list[str]) -> dict:
         """Request recipe from Gemini with retry logic and timeout."""
         api_key = os.getenv("GEMINI_API_KEY", "").strip()
@@ -243,6 +270,8 @@ class ModelManager:
             if not ing_list:
                 ing_list = [{"name": ing} for ing in original_ingredients]
 
+            ing_list = self._dedupe_ingredients(ing_list)
+
             return {
                 "title": str(data.get("title", "Generated Recipe")).title(),
                 "time": str(data.get("time", "30 mins")),
@@ -292,6 +321,7 @@ class ModelManager:
 
         ingredient_source = parsed_ingredients or ingredients
         ingredient_list = [{"name": ing} for ing in ingredient_source]
+        ingredient_list = self._dedupe_ingredients(ingredient_list)
 
         return {
             "title": title.title(),
