@@ -1,8 +1,9 @@
 # Recipe App — Monorepo (Frontend + Backend + DB)
 
+Live site: [https://szakdolgozat-frontend-ptf9.onrender.com/](https://szakdolgozat-frontend-ptf9.onrender.com/)
+
 This repository contains a full-stack recipe application (React + Vite frontend, FastAPI backend, PostgreSQL DB) organized under the `app/` directory. The project is designed to be run via Docker Compose for both development and production workflows.
 
----
 
 ## Table of contents
 
@@ -21,6 +22,7 @@ This repository contains a full-stack recipe application (React + Vite frontend,
   - [Testing](#testing)
   - [Useful commands](#useful-commands)
   - [Directory tree (visual)](#directory-tree-visual)
+  - [Documentation draft (work in progress)](#documentation-draft-work-in-progress)
   - [Diagrams](#diagrams)
     - [Entity-Relationship diagram](#entity-relationship-diagram)
     - [Sequence diagram](#sequence-diagram)
@@ -31,10 +33,23 @@ This repository contains a full-stack recipe application (React + Vite frontend,
 Follow these steps to clone and start the app quickly (dev mode):
 
 ```bash
-# Clone and run 
+# Clone
 git clone https://github.com/L-e-m-i/szakdolgozat.git
-cd app && cp .env.example .env
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+cd szakdolgozat
+
+# Create env files
+cp app/.env.example app/.env
+cp app/frontend/.env.example app/frontend/.env
+
+# Start dev stack
+docker compose -f app/docker-compose.yml -f app/docker-compose.dev.yml up -d --build
+```
+
+PowerShell env copy alternative:
+
+```powershell
+Copy-Item app/.env.example app/.env
+Copy-Item app/frontend/.env.example app/frontend/.env
 ```
 
 After the stack is up:
@@ -53,7 +68,7 @@ docker compose -f app/docker-compose.yml up -d --build
 
 ## Repository layout
 
-Key folders and files (rooted at `app/`):
+Key folders and files:
 
 - `app/docker-compose.yml` — base Compose file (production defaults; references `.env`).
 - `app/docker-compose.dev.yml` — development override (dev servers, mounts, hot reload).
@@ -65,6 +80,8 @@ Key folders and files (rooted at `app/`):
   - `app/backend/Dockerfile` — backend image.
   - `app/backend/app/` — backend package (endpoints, models, config).
 - `app/.env` — environment variables for Compose (create locally).
+- `docs/diagrams/` — architecture diagrams (ER + sequence).
+- `docs/ux/` — UX documentation draft (journeys, screens, design system, self-assessment, mockups, screenshots).
 
 ---
 
@@ -195,7 +212,7 @@ docker compose -f app/docker-compose.yml -f app/docker-compose.dev.yml logs -f b
 ```
 
 Windows HMR tips:
-- If HMR doesn't trigger, set `CHOKIDAR_USEPOLLING="true"` and `CHOKIDAR_INTERVAL="1000"` in frontend dev env (see `docker-compose.dev.yml`).
+- If HMR doesn't trigger, set `CHOKIDAR_USEPOLLING="true"` and `CHOKIDAR_POLLING_INTERVAL="1000"` in frontend dev env (see `docker-compose.dev.yml`).
 - Avoid `:delegated`/`:cached` on Windows bind mounts — use plain bind mounts for reliability.
 
 ---
@@ -231,7 +248,12 @@ Backend (local):
 - Create virtualenv, install deps, set `DATABASE_URL` to local Postgres, then:
 
 ```bash
-uvicorn app.backend.app.main:app --reload --host 0.0.0.0 --port 8000
+cd app/backend
+python -m venv .venv
+# Windows PowerShell: .\.venv\Scripts\Activate.ps1
+# macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ---
@@ -258,8 +280,19 @@ Example local test flow:
 # Start a local Postgres for tests:
 docker run --name test-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=test_db -p 5432:5432 -d postgres:15
 
+# Linux/macOS
 export DATABASE_URL="postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/test_db"
-pytest -q
+pytest -q app/backend/tests
+
+# Windows PowerShell
+$env:DATABASE_URL="postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/test_db"
+pytest -q app/backend/tests
+```
+
+Frontend unit tests:
+
+```bash
+npm run --prefix app/frontend test -- --run
 ```
 
 Gotchas:
@@ -285,7 +318,13 @@ docker compose -f app/docker-compose.yml -f app/docker-compose.dev.yml down
 - Run backend tests:
 
 ```bash
-pytest -q
+pytest -q app/backend/tests
+```
+
+- Run frontend tests:
+
+```bash
+npm run --prefix app/frontend test -- --run
 ```
 
 - Generate frontend types from OpenAPI (if using dev container):
@@ -308,16 +347,59 @@ app/
 │   ├── Dockerfile
 │   └── requirements.txt
 ├── frontend/                # React & Vite
-│   ├── src/                 # React source (components, routes, hooks)
+│   ├── app/                 # React source (components, routes, hooks)
 │   ├── public/              # Static assets
-│   ├── types/               # Generated OpenAPI TypeScript types
+│   ├── tests/               # Frontend tests (vitest)
+│   ├── build/               # SSR/client build output
 │   ├── package.json
 │   └── Dockerfile
 ├── docker-compose.yml
 ├── docker-compose.dev.yml
 ├── .env.example
 └── README.md
+
+docs/
+├── diagrams/
+│   ├── er.png
+│   └── sequence.png
+└── ux/
+  ├── README.MD
+  ├── design_system.md
+  ├── journeys.md
+  ├── screens.md
+  ├── self_assessment.md
+  ├── pageflow.mmd
+  ├── screenshots/
+  └── mockups/
 ```
+
+---
+
+## Documentation draft (work in progress)
+
+The project documentation draft is available under [docs/](docs/):
+
+- [docs/diagrams/er.png](docs/diagrams/er.png)
+- [docs/diagrams/sequence.png](docs/diagrams/sequence.png)
+- [docs/ux/README.MD](docs/ux/README.MD)
+- [docs/ux/design_system.md](docs/ux/design_system.md)
+- [docs/ux/journeys.md](docs/ux/journeys.md)
+- [docs/ux/screens.md](docs/ux/screens.md)
+- [docs/ux/self_assessment.md](docs/ux/self_assessment.md)
+- [docs/ux/pageflow.mmd](docs/ux/pageflow.mmd)
+- [docs/ux/mockups/](docs/ux/mockups/)
+- [docs/ux/screenshots/](docs/ux/screenshots/)
+
+UX screenshots currently included:
+
+- [docs/ux/screenshots/S01_bejelentkezes.png](docs/ux/screenshots/S01_bejelentkezes.png)
+- [docs/ux/screenshots/S02_regisztracio.png](docs/ux/screenshots/S02_regisztracio.png)
+- [docs/ux/screenshots/S03_fooldal.png](docs/ux/screenshots/S03_fooldal.png)
+- [docs/ux/screenshots/S04_generalt_recept.png](docs/ux/screenshots/S04_generalt_recept.png)
+- [docs/ux/screenshots/S05_profil.png](docs/ux/screenshots/S05_profil.png)
+- [docs/ux/screenshots/S06_mentett_receptek.png](docs/ux/screenshots/S06_mentett_receptek.png)
+- [docs/ux/screenshots/S07_mentett_recept.png](docs/ux/screenshots/S07_mentett_recept.png)
+- [docs/ux/screenshots/S08_profil_szerkesztese.png](docs/ux/screenshots/S08_profil_szerkesztese.png)
 
 ---
 
