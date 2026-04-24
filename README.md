@@ -22,7 +22,7 @@ This repository contains a full-stack recipe application (React + Vite frontend,
   - [Testing](#testing)
   - [Useful commands](#useful-commands)
   - [Directory tree (visual)](#directory-tree-visual)
-  - [Documentation draft (work in progress)](#documentation-draft-work-in-progress)
+  - [More documentation](#more-documentation)
   - [Diagrams](#diagrams)
     - [Entity-Relationship diagram](#entity-relationship-diagram)
     - [Sequence diagram](#sequence-diagram)
@@ -375,9 +375,9 @@ docs/
 
 ---
 
-## Documentation draft (work in progress)
+## More documentation 
 
-The project documentation draft is available under [docs/](docs/):
+More documentation is available under [docs/](docs/):
 
 - [docs/diagrams/er.png](docs/diagrams/er.png)
 - [docs/diagrams/sequence.png](docs/diagrams/sequence.png)
