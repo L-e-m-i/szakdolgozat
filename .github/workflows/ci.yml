@@ -51,12 +51,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run backend tests with coverage
+       - name: Run backend tests with coverage
         working-directory: app/backend
         env:
           PYTHONPATH: ${{ github.workspace }}/app/backend
           DATABASE_URL: postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/test_db
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           mkdir -p reports
           pytest tests --junitxml=reports/junit.xml --cov=app --cov-report=xml:reports/coverage.xml
